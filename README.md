@@ -38,6 +38,7 @@ The SBOM is written to the project's `generated/` folder as `<name>.bndrun.cdx.j
 | `cyclonedx.version` | `1.6`, `1.7` (written with the matching `$schema`) | `1.6` |
 | `application.purl` | PURL of the application, e.g. of the image built from the bndrun (`"pkg:oci/..."`, quoted); also its `bom-ref` | none |
 | `property.<name>` | free properties of the BOM, e.g. `property.vcs:commit=${env;GITHUB_SHA}`; CycloneDX `metadata.properties`, SPDX document comment | none |
+| `maven.<bsn>` | `groupId:artifactId[:version]`: Maven coordinates for a bundle from a p2 or OBR repository that is also published to Maven (version defaults to the bundle's major.minor.micro) | none |
 
 ### Configuration in the `.bndrun`
 
@@ -77,6 +78,20 @@ A complete example:
 
 -sbom: level=medium, format=cyclonedx
 ```
+
+## What the SBOM contains
+
+- **Resolved application:** the `-runbundles`, the framework (`-runfw`, `-runpath`) and the
+  dependency graph between them, computed from the bundles' manifests.
+- **Embedded libraries:** libraries a bundle carries inside — found through `pom.properties`
+  of other artifacts (also under `OSGI-OPT/src`), jars on the `Bundle-ClassPath`, and, for
+  bundles built in the same workspace, `-buildpath` entries whose classes were inlined with
+  `-conditionalpackage`, `Private-Package` or `-includeresource @...`. They are listed as
+  components of their own with their original Maven coordinates, so scanners match CVEs
+  against them; `osgi:embedded:in` names the bundle.
+- **Origin:** for every bundle the repository it was taken from (`osgi:repository:name`,
+  `osgi:repository:kind`: `maven`, `p2`, `osgi`, `file`, `workspace`) and, where the
+  repository knows it, the download URL as `distribution` reference.
 
 ## Build
 

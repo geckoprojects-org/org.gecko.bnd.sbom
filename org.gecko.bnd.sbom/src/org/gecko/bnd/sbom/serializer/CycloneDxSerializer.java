@@ -68,7 +68,7 @@ public final class CycloneDxSerializer implements SbomSerializer {
 
 		List<Object> components = new ArrayList<>();
 		for (SbomComponent component : model.getComponents()) {
-			components.add(component(component, refs));
+			addComponent(component, null, refs, components);
 		}
 		bom.put("components", components);
 
@@ -160,7 +160,7 @@ public final class CycloneDxSerializer implements SbomSerializer {
 	private static List<Object> dependencies(SbomModel model, SbomRefs refs) {
 		List<Object> result = new ArrayList<>();
 		result.add(dependency(refs.application(), model.getApplicationDependencies(), refs));
-		for (SbomComponent component : model.getComponents()) {
+		for (SbomComponent component : model.getAllComponents()) {
 			result.add(dependency(refs.of(component), model.getDependencies(component), refs));
 		}
 		return result;
@@ -182,6 +182,25 @@ public final class CycloneDxSerializer implements SbomSerializer {
 		reference.put("type", type);
 		reference.put("url", url);
 		return reference;
+	}
+
+	/**
+	 * #8: embedded libraries are listed flat, after their bundle, not nested in it — Trivy and
+	 * other scanners read only the top-level components, and a library they do not see is not
+	 * matched against CVEs. Containment is stated by the bundle's dependency on the library and
+	 * by the property {@code osgi:embedded:in}.
+	 */
+	private void addComponent(SbomComponent component, SbomComponent parent, SbomRefs refs, List<Object> components) {
+		Map<String, Object> node = component(component, refs);
+		if (parent != null) {
+			@SuppressWarnings("unchecked")
+			List<Object> properties = (List<Object>) node.computeIfAbsent("properties", k -> new ArrayList<>());
+			properties.add(property("osgi:embedded:in", refs.of(parent)));
+		}
+		components.add(node);
+		for (SbomComponent embedded : component.getEmbedded()) {
+			addComponent(embedded, component, refs, components);
+		}
 	}
 
 	private Map<String, Object> component(SbomComponent component, SbomRefs refs) {
@@ -225,8 +244,25 @@ public final class CycloneDxSerializer implements SbomSerializer {
 		if (component.isUnverifiedIdentity()) {
 			properties.add(property("osgi:identity:matchability", "unverified"));
 		}
+		if (component.getIdentitySource() != null) {
+			properties.add(property("osgi:identity:source", component.getIdentitySource()));
+		}
+		// #9: where the bundle was taken from
+		if (component.getRepositoryName() != null) {
+			properties.add(property("osgi:repository:name", component.getRepositoryName()));
+		}
+		if (component.getRepositoryKind() != null) {
+			properties.add(property("osgi:repository:kind", component.getRepositoryKind()));
+		}
+		// #8: where in the bundle an embedded library was found
+		if (component.getEmbeddedPath() != null) {
+			properties.add(property("osgi:embedded:source", component.getEmbeddedPath()));
+		}
 		if (!properties.isEmpty()) {
 			node.put("properties", properties);
+		}
+		if (component.getDistributionUrl() != null) {
+			node.put("externalReferences", listOf(reference("distribution", component.getDistributionUrl())));
 		}
 		// TODO(includeOSGIMetadata): Import-Package ranges / Require-Capability as namespaced
 		//   properties; package/class provenance format-natively via CycloneDX `pedigree`.

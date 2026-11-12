@@ -72,12 +72,13 @@ public final class SpdxSerializer implements SbomSerializer {
 			String spdxId = refs.spdxOf(component);
 			packages.add(pkg(spdxId, component, extracted));
 			relationships.add(relationship(refs.spdxApplication(), "CONTAINS", spdxId));
+			addEmbedded(component, refs, extracted, packages, relationships);
 		}
 		// #13: the dependency graph
 		for (SbomComponent target : model.getApplicationDependencies()) {
 			relationships.add(relationship(refs.spdxApplication(), "DEPENDS_ON", refs.spdxOf(target)));
 		}
-		for (SbomComponent component : model.getComponents()) {
+		for (SbomComponent component : model.getAllComponents()) {
 			for (SbomComponent target : model.getDependencies(component)) {
 				relationships.add(relationship(refs.spdxOf(component), "DEPENDS_ON", refs.spdxOf(target)));
 			}
@@ -185,7 +186,8 @@ public final class SpdxSerializer implements SbomSerializer {
 				pkg.put("versionInfo", component.getVersion());
 			}
 		}
-		pkg.put("downloadLocation", NOASSERTION);
+		// #9: the download URL the repository gave, if any
+		pkg.put("downloadLocation", component.getDistributionUrl() != null ? component.getDistributionUrl() : NOASSERTION);
 		pkg.put("filesAnalyzed", false);
 
 		String license = licenseExpression(component, extracted);
@@ -215,10 +217,31 @@ public final class SpdxSerializer implements SbomSerializer {
 		if (component.isUnverifiedIdentity()) {
 			comment.add("Identity unverified (reduced matchability): no reliable PURL.");
 		}
+		if (component.getIdentitySource() != null) {
+			comment.add("Maven identity " + component.getIdentitySource() + ".");
+		}
+		if (component.getRepositoryName() != null) {
+			comment.add("Repository: " + component.getRepositoryName()
+				+ (component.getRepositoryKind() != null ? " (" + component.getRepositoryKind() + ")" : "") + ".");
+		}
+		if (component.getEmbeddedPath() != null) {
+			comment.add("Embedded: " + component.getEmbeddedPath() + ".");
+		}
 		if (!comment.isEmpty()) {
 			pkg.put("comment", String.join(" ", comment));
 		}
 		return pkg;
+	}
+
+	/** #8: the libraries embedded in a bundle, as packages the bundle CONTAINS. */
+	private void addEmbedded(SbomComponent parent, SbomRefs refs, ExtractedLicenses extracted, List<Object> packages,
+		List<Object> relationships) {
+		for (SbomComponent embedded : parent.getEmbedded()) {
+			String spdxId = refs.spdxOf(embedded);
+			packages.add(pkg(spdxId, embedded, extracted));
+			relationships.add(relationship(refs.spdxOf(parent), "CONTAINS", spdxId));
+			addEmbedded(embedded, refs, extracted, packages, relationships);
+		}
 	}
 
 	/**

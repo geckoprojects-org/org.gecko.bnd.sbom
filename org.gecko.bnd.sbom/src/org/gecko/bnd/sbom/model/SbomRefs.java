@@ -51,7 +51,7 @@ public final class SbomRefs {
 		application = unique(applicationBase, used, "#");
 		spdxApplication = unique(SPDX_PREFIX + spdxSafe(applicationBase), spdxUsed, "-");
 
-		for (SbomComponent component : model.getComponents()) {
+		for (SbomComponent component : model.getAllComponents()) {
 			String base = base(component);
 			refs.put(component, unique(base, used, "#"));
 			spdxRefs.put(component, unique(SPDX_PREFIX + spdxSafe(base), spdxUsed, "-"));

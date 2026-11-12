@@ -50,6 +50,18 @@ public final class SbomComponent {
 	 * PURL silently breaks the CVE link.
 	 */
 	private boolean		unverifiedIdentity;
+	/** Where the Maven identity came from when it was not found in the bundle (#9: configured). */
+	private String		identitySource;
+	/** #9: the repository the bundle was taken from */
+	private String		repositoryName;
+	/** #9: kind of that repository: maven, p2, osgi, file, workspace, ... */
+	private String		repositoryKind;
+	/** #9: where the artifact can be downloaded (http/https only) */
+	private String		distributionUrl;
+	/** #8: libraries repackaged or embedded in this bundle */
+	private final List<SbomComponent>	embedded	= new ArrayList<>();
+	/** #8: for an embedded library, where in the bundle it was found */
+	private String		embeddedPath;
 
 	public String getBsn() {
 		return bsn;
@@ -138,6 +150,60 @@ public final class SbomComponent {
 
 	public SbomComponent setUnverifiedIdentity(boolean unverifiedIdentity) {
 		this.unverifiedIdentity = unverifiedIdentity;
+		return this;
+	}
+
+	public String getIdentitySource() {
+		return identitySource;
+	}
+
+	public SbomComponent setIdentitySource(String identitySource) {
+		this.identitySource = identitySource;
+		return this;
+	}
+
+	public String getRepositoryName() {
+		return repositoryName;
+	}
+
+	public SbomComponent setRepositoryName(String repositoryName) {
+		this.repositoryName = repositoryName;
+		return this;
+	}
+
+	public String getRepositoryKind() {
+		return repositoryKind;
+	}
+
+	public SbomComponent setRepositoryKind(String repositoryKind) {
+		this.repositoryKind = repositoryKind;
+		return this;
+	}
+
+	public String getDistributionUrl() {
+		return distributionUrl;
+	}
+
+	public SbomComponent setDistributionUrl(String distributionUrl) {
+		this.distributionUrl = distributionUrl;
+		return this;
+	}
+
+	public List<SbomComponent> getEmbedded() {
+		return embedded;
+	}
+
+	public SbomComponent addEmbedded(SbomComponent component) {
+		embedded.add(component);
+		return this;
+	}
+
+	public String getEmbeddedPath() {
+		return embeddedPath;
+	}
+
+	public SbomComponent setEmbeddedPath(String embeddedPath) {
+		this.embeddedPath = embeddedPath;
 		return this;
 	}
 }

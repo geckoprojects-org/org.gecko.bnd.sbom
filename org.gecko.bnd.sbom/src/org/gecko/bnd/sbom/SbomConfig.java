@@ -27,12 +27,14 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.gecko.bnd.sbom.model.MavenCoordinates;
 import org.gecko.bnd.sbom.model.SbomLevel;
 import org.gecko.bnd.sbom.serializer.SbomFormat;
 
 import aQute.bnd.build.Project;
 import aQute.bnd.header.Attrs;
 import aQute.bnd.header.OSGiHeader;
+import aQute.bnd.version.Version;
 import aQute.service.reporter.Reporter;
 
 /**
@@ -69,6 +71,11 @@ public final class SbomConfig {
 	static final String			APP_PURL		= "application.purl";
 	/** {@code property.<name>=<value>}: free properties of the BOM (commit, image reference). */
 	static final String			PROPERTY_PREFIX	= "property.";
+	/**
+	 * {@code maven.<bsn>=groupId:artifactId[:version]}: Maven coordinates of a bundle that has none
+	 * in its repository or jar (p2, OBR), for bundles that are also published to Maven (#9).
+	 */
+	static final String			MAVEN_PREFIX	= "maven.";
 	/** {@code serialNumber} derived from the BOM's content (default). */
 	static final String			SERIAL_CONTENT	= "content";
 	/** {@code serialNumber} random per export. */
@@ -88,10 +95,12 @@ public final class SbomConfig {
 	private final String		cyclonedxVersion;
 	private final String		applicationPurl;
 	private final Map<String, String>	properties;
+	private final Map<String, String>	mavenMappings;
 
 	private SbomConfig(SbomLevel level, SbomFormat format, boolean includeOSGIMetadata, Instant created,
 		boolean randomSerialNumber, String applicationName, String applicationGroup, String applicationVersion,
-		String cyclonedxVersion, String applicationPurl, Map<String, String> properties) {
+		String cyclonedxVersion, String applicationPurl, Map<String, String> properties,
+		Map<String, String> mavenMappings) {
 		this.level = level;
 		this.format = format;
 		this.includeOSGIMetadata = includeOSGIMetadata;
@@ -104,6 +113,7 @@ public final class SbomConfig {
 		this.cyclonedxVersion = cyclonedxVersion;
 		this.applicationPurl = applicationPurl;
 		this.properties = Collections.unmodifiableMap(new LinkedHashMap<>(properties));
+		this.mavenMappings = Collections.unmodifiableMap(new LinkedHashMap<>(mavenMappings));
 	}
 
 	/**
@@ -114,7 +124,7 @@ public final class SbomConfig {
 	public static SbomConfig of(SbomLevel level, SbomFormat format, boolean includeOSGIMetadata, String timestamp) {
 		return new SbomConfig(level, format, includeOSGIMetadata,
 			timestamp != null ? Instant.parse(timestamp) : Instant.now(), false, null, null, null,
-			CYCLONEDX_VERSIONS.get(0), null, Map.of());
+			CYCLONEDX_VERSIONS.get(0), null, Map.of(), Map.of());
 	}
 
 	public static SbomConfig from(Project project, Map<String, String> options) {
@@ -128,6 +138,7 @@ public final class SbomConfig {
 			values.putAll(options);
 		}
 		Map<String, String> properties = new LinkedHashMap<>();
+		Map<String, String> mavenMappings = new LinkedHashMap<>();
 		for (Map.Entry<String, String> entry : values.entrySet()) {
 			String key = entry.getKey();
 			if (key.startsWith(PROPERTY_PREFIX)) {
@@ -136,6 +147,19 @@ public final class SbomConfig {
 					reporter.error("SBOM option '%s' needs a property name, e.g. '%sgit:commit=...'", key, PROPERTY_PREFIX);
 				} else {
 					properties.put(name, entry.getValue());
+				}
+				continue;
+			}
+			if (key.startsWith(MAVEN_PREFIX)) {
+				String bsn = key.substring(MAVEN_PREFIX.length());
+				String value = entry.getValue() == null ? "" : entry.getValue()
+					.trim();
+				if (bsn.isBlank() || !value.matches("[^:\\s]+:[^:\\s]+(:[^:\\s]+)?")) {
+					reporter.error(
+						"Invalid SBOM option '%s=%s'; expected '%s<bundle symbolic name>=groupId:artifactId[:version]'",
+						key, value, MAVEN_PREFIX);
+				} else {
+					mavenMappings.put(bsn, value);
 				}
 				continue;
 			}
@@ -170,7 +194,7 @@ public final class SbomConfig {
 
 		return new SbomConfig(level, format, includeOSGIMetadata, created != null ? created : Instant.now(),
 			SERIAL_RANDOM.equals(serialNumber), text(values, APP_NAME), text(values, APP_GROUP),
-			text(values, APP_VERSION), cyclonedxVersion, applicationPurl, properties);
+			text(values, APP_VERSION), cyclonedxVersion, applicationPurl, properties, mavenMappings);
 	}
 
 	/**
@@ -268,6 +292,32 @@ public final class SbomConfig {
 		return applicationPurl;
 	}
 
+	/**
+	 * Configured Maven coordinates for a bundle ({@code maven.<bsn>}), or {@code null}. Without a
+	 * version in the mapping the bundle's major.minor.micro is used.
+	 */
+	public MavenCoordinates mavenMapping(String bsn, String bundleVersion) {
+		String value = mavenMappings.get(bsn);
+		if (value == null) {
+			return null;
+		}
+		String[] parts = value.split(":");
+		String version = parts.length > 2 ? parts[2] : baseVersion(bundleVersion);
+		return MavenCoordinates.of(parts[0], parts[1], version, null, null);
+	}
+
+	private static String baseVersion(String bundleVersion) {
+		if (bundleVersion == null) {
+			return null;
+		}
+		try {
+			Version v = Version.parseVersion(bundleVersion);
+			return v.getMajor() + "." + v.getMinor() + "." + v.getMicro();
+		} catch (IllegalArgumentException e) {
+			return null;
+		}
+	}
+
 	/** The {@code property.<name>} entries by name, in the order given. */
 	public Map<String, String> properties() {
 		return properties;
@@ -284,7 +334,7 @@ public final class SbomConfig {
 			throw new IllegalArgumentException("Unsupported CycloneDX version " + version + ", supported: " + CYCLONEDX_VERSIONS);
 		}
 		return new SbomConfig(level, format, includeOSGIMetadata, created, randomSerialNumber, applicationName,
-			applicationGroup, applicationVersion, version, applicationPurl, properties);
+			applicationGroup, applicationVersion, version, applicationPurl, properties, mavenMappings);
 	}
 
 	/** {@code application.name} from {@code -sbom} or the options, or {@code null}. */
@@ -305,6 +355,6 @@ public final class SbomConfig {
 	/** A copy with a random serial number (for tests and the Maven/Gradle wrappers). */
 	public SbomConfig withRandomSerialNumber() {
 		return new SbomConfig(level, format, includeOSGIMetadata, created, true, applicationName, applicationGroup,
-			applicationVersion, cyclonedxVersion, applicationPurl, properties);
+			applicationVersion, cyclonedxVersion, applicationPurl, properties, mavenMappings);
 	}
 }

@@ -55,7 +55,7 @@ public final class SerialNumbers {
 			.append('\n')
 			.append(refs.application())
 			.append('\n');
-		for (SbomComponent component : model.getComponents()) {
+		for (SbomComponent component : model.getAllComponents()) {
 			name.append(refs.of(component))
 				.append(' ')
 				.append(component.getSha512() != null ? component.getSha512() : "-")

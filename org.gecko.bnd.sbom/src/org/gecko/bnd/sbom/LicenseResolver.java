@@ -81,16 +81,29 @@ public final class LicenseResolver {
 			return fromRepositoryPom;
 		}
 		try (Jar jar = new Jar(file)) {
-			List<SbomLicense> fromEmbeddedPom = fromEmbeddedPom(jar);
-			if (!fromEmbeddedPom.isEmpty()) {
-				return fromEmbeddedPom;
-			}
-			List<SbomLicense> fromLicenseFile = fromLicenseFile(jar);
-			if (!fromLicenseFile.isEmpty()) {
-				return fromLicenseFile;
-			}
-			return fromAbout(jar);
+			return fromJarContent(jar);
 		}
+	}
+
+	/**
+	 * The licenses of a jar that is not in a repository, e.g. one embedded in a bundle (#8):
+	 * its manifest, then what {@link #resolve(Container)} looks at inside a jar.
+	 */
+	public List<SbomLicense> resolve(Jar jar) throws Exception {
+		List<SbomLicense> fromManifest = fromManifest(jar.getManifest());
+		return fromManifest.isEmpty() ? fromJarContent(jar) : fromManifest;
+	}
+
+	private List<SbomLicense> fromJarContent(Jar jar) throws Exception {
+		List<SbomLicense> fromEmbeddedPom = fromEmbeddedPom(jar);
+		if (!fromEmbeddedPom.isEmpty()) {
+			return fromEmbeddedPom;
+		}
+		List<SbomLicense> fromLicenseFile = fromLicenseFile(jar);
+		if (!fromLicenseFile.isEmpty()) {
+			return fromLicenseFile;
+		}
+		return fromAbout(jar);
 	}
 
 	/**
