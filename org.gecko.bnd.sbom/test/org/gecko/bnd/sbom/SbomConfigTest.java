@@ -15,6 +15,7 @@ package org.gecko.bnd.sbom;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.io.ByteArrayOutputStream;
 import java.time.Instant;
 import java.util.Map;
 
@@ -144,7 +145,8 @@ public class SbomConfigTest {
 
 	@Test
 	public void withoutTimestampCreationTimeIsNow() throws Exception {
-		long before = System.currentTimeMillis();
+		// the creation time is whole seconds (SPDX requires it)
+		long before = System.currentTimeMillis() / 1000 * 1000;
 		Resource cdx = new CycloneDxSerializer().serialize(new SbomModel().setApplicationName("app.bndrun"),
 			SbomConfig.of(SbomLevel.SIMPLE, SbomFormat.CYCLONEDX, false, null));
 
@@ -167,5 +169,35 @@ public class SbomConfigTest {
 		assertThat(reporter.getErrors()).singleElement()
 			.asString()
 			.contains("content, random");
+	}
+
+	@Test
+	public void creationTimeIsWholeSeconds() {
+		SbomConfig config = SbomConfig.of(SbomLevel.SIMPLE, SbomFormat.SPDX, false, "2026-01-01T10:11:12.345678Z");
+
+		assertThat(config.created()).isEqualTo(Instant.parse("2026-01-01T10:11:12Z"));
+	}
+
+	@Test
+	public void cyclonedxVersionOption() throws Exception {
+		Processor reporter = new Processor();
+
+		assertThat(SbomConfig.from(reporter, "", Map.of())
+			.cyclonedxVersion()).isEqualTo("1.6");
+		SbomConfig v17 = SbomConfig.from(reporter, "cyclonedx.version=1.7", Map.of());
+		assertThat(v17.cyclonedxVersion()).isEqualTo("1.7");
+		assertThat(reporter.isOk()).isTrue();
+
+		SbomConfig.from(reporter, "cyclonedx.version=1.5", Map.of());
+		assertThat(reporter.getErrors()).singleElement()
+			.asString()
+			.contains("1.6, 1.7");
+
+		try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+			new CycloneDxSerializer().serialize(new SbomModel().setApplicationName("app"), v17)
+				.write(out);
+			assertThat(out.toString("UTF-8")).contains("\"$schema\":\"http://cyclonedx.org/schema/bom-1.7.schema.json\"")
+				.contains("\"specVersion\":\"1.7\"");
+		}
 	}
 }

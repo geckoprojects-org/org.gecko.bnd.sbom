@@ -47,11 +47,34 @@ jobs:
       - name: SBOM of the exporter's own runtime
         run: ./gradlew :org.gecko.bnd.sbom:sbom --no-daemon --stacktrace
 
+      # The other output formats, so that all of them are validated below.
+      - name: SBOMs in the other formats (SPDX 2.3, CycloneDX 1.7)
+        run: ./gradlew :org.gecko.bnd.sbom:sbomSpdx :org.gecko.bnd.sbom:sbomCdx17 --no-daemon --stacktrace
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.13'
+
+      # The official schemas, pinned to a commit of each specification repository.
+      - name: Validate the SBOMs against their schemas
+        env:
+          CYCLONEDX_SPEC: https://raw.githubusercontent.com/CycloneDX/specification/6470e34ef83f915868ece48934cff52e10c9eb49/schema
+          SPDX_SPEC: https://raw.githubusercontent.com/spdx/spdx-spec/6f2cb47d13db19b12c23885573b22ef32ec1ada5/schemas
+        run: |
+          python -m pip install --quiet jsonschema==4.26.0
+          mkdir -p "$RUNNER_TEMP/schemas"
+          for f in bom-1.6.schema.json bom-1.7.schema.json spdx.schema.json jsf-0.82.schema.json cryptography-defs.schema.json; do
+            curl -fsSL -o "$RUNNER_TEMP/schemas/$f" "$CYCLONEDX_SPEC/$f"
+          done
+          curl -fsSL -o "$RUNNER_TEMP/schemas/spdx-2.3.schema.json" "$SPDX_SPEC/spdx-schema.json"
+          python -I .github/scripts/validate-sbom.py "$RUNNER_TEMP/schemas" $(find org.gecko.bnd.sbom/generated/sbom -name '*.json')
+
       - name: Upload SBOM
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sbom
-          path: org.gecko.bnd.sbom/generated/sbom/runtime.bndrun.cdx.json
+          path: org.gecko.bnd.sbom/generated/sbom/**/*.json
           retention-days: 30
 
       # Trivy reads the SBOM and matches its components against its vulnerability database.
@@ -60,7 +83,7 @@ jobs:
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: sbom
-          scan-ref: org.gecko.bnd.sbom/generated/sbom/runtime.bndrun.cdx.json
+          scan-ref: org.gecko.bnd.sbom/generated/sbom/runtime/runtime.bndrun.cdx.json
           format: sarif
           output: trivy-results.sarif
           exit-code: '0'
@@ -70,7 +93,7 @@ jobs:
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: sbom
-          scan-ref: org.gecko.bnd.sbom/generated/sbom/runtime.bndrun.cdx.json
+          scan-ref: org.gecko.bnd.sbom/generated/sbom/runtime/runtime.bndrun.cdx.json
           format: table
           output: trivy-results.txt
           exit-code: '0'

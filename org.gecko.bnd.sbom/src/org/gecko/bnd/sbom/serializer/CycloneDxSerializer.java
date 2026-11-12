@@ -41,7 +41,6 @@ import aQute.lib.json.JSONCodec;
  */
 public final class CycloneDxSerializer implements SbomSerializer {
 
-	private static final String		SPEC_VERSION	= "1.6";
 	private static final JSONCodec	CODEC			= new JSONCodec();
 
 	/** Bundle-SymbolicName of a component. */
@@ -57,8 +56,10 @@ public final class CycloneDxSerializer implements SbomSerializer {
 	@Override
 	public Resource serialize(SbomModel model, SbomConfig config) throws Exception {
 		Map<String, Object> bom = new LinkedHashMap<>();
+		// #17: the selected specification version, with its schema so editors and CI can validate
+		bom.put("$schema", "http://cyclonedx.org/schema/bom-" + config.cyclonedxVersion() + ".schema.json");
 		bom.put("bomFormat", "CycloneDX");
-		bom.put("specVersion", SPEC_VERSION);
+		bom.put("specVersion", config.cyclonedxVersion());
 		SbomRefs refs = SbomRefs.of(model);
 		// #12: identity of this BOM; together with version it tells a new BOM from a revision
 		bom.put("serialNumber", SerialNumbers.urn(SerialNumbers.of(model, refs, config)));
@@ -115,6 +116,17 @@ public final class CycloneDxSerializer implements SbomSerializer {
 			app.put("externalReferences", references);
 		}
 		metadata.put("component", app);
+
+		// A2.5/Q4: why the BOM is incomplete. compositions may not carry properties (schema), so
+		// the declared gaps go into the metadata's properties.
+		if (!model.getKnownUnknowns()
+			.isEmpty()) {
+			List<Object> notes = new ArrayList<>();
+			for (String unknown : model.getKnownUnknowns()) {
+				notes.add(property("osgi:known-unknown", unknown));
+			}
+			metadata.put("properties", notes);
+		}
 		return metadata;
 	}
 
@@ -253,14 +265,6 @@ public final class CycloneDxSerializer implements SbomSerializer {
 		composition.put("aggregate", model.isDependenciesComplete() ? "complete" : "incomplete");
 		// the statement is about the application's assembly: the components listed in this BOM
 		composition.put("assemblies", listOf(refs.application()));
-		if (!model.getKnownUnknowns()
-			.isEmpty()) {
-			List<Object> notes = new ArrayList<>();
-			for (String unknown : model.getKnownUnknowns()) {
-				notes.add(property("osgi:known-unknown", unknown));
-			}
-			composition.put("properties", notes);
-		}
 		return listOf(composition);
 	}
 

@@ -15,6 +15,7 @@ package org.gecko.bnd.sbom;
 
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
+import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -56,6 +57,10 @@ public final class SbomConfig {
 	static final String			TIMESTAMP		= "timestamp";
 	static final String			SERIAL_NUMBER	= "serialNumber";
 	/** Overrides of the application's identity (default: bndrun name, -groupid, Bundle-Version). */
+	/** CycloneDX specification version of the output. */
+	static final String			CYCLONEDX_VERSION	= "cyclonedx.version";
+	/** Supported CycloneDX versions; the first is the default. */
+	public static final List<String>	CYCLONEDX_VERSIONS	= List.of("1.6", "1.7");
 	static final String			APP_NAME		= "application.name";
 	static final String			APP_GROUP		= "application.group";
 	static final String			APP_VERSION		= "application.version";
@@ -65,7 +70,7 @@ public final class SbomConfig {
 	static final String			SERIAL_RANDOM	= "random";
 
 	private static final List<String>	KEYS	= List.of(LEVEL, FORMAT, INCLUDE_OSGI, TIMESTAMP, SERIAL_NUMBER, APP_NAME,
-		APP_GROUP, APP_VERSION);
+		APP_GROUP, APP_VERSION, CYCLONEDX_VERSION);
 
 	private final SbomLevel		level;
 	private final SbomFormat	format;
@@ -75,17 +80,21 @@ public final class SbomConfig {
 	private final String		applicationName;
 	private final String		applicationGroup;
 	private final String		applicationVersion;
+	private final String		cyclonedxVersion;
 
 	private SbomConfig(SbomLevel level, SbomFormat format, boolean includeOSGIMetadata, Instant created,
-		boolean randomSerialNumber, String applicationName, String applicationGroup, String applicationVersion) {
+		boolean randomSerialNumber, String applicationName, String applicationGroup, String applicationVersion,
+		String cyclonedxVersion) {
 		this.level = level;
 		this.format = format;
 		this.includeOSGIMetadata = includeOSGIMetadata;
-		this.created = created;
+		// SPDX requires whole seconds; CycloneDX gets the same instant
+		this.created = created.truncatedTo(ChronoUnit.SECONDS);
 		this.randomSerialNumber = randomSerialNumber;
 		this.applicationName = applicationName;
 		this.applicationGroup = applicationGroup;
 		this.applicationVersion = applicationVersion;
+		this.cyclonedxVersion = cyclonedxVersion;
 	}
 
 	/**
@@ -95,7 +104,8 @@ public final class SbomConfig {
 	 */
 	public static SbomConfig of(SbomLevel level, SbomFormat format, boolean includeOSGIMetadata, String timestamp) {
 		return new SbomConfig(level, format, includeOSGIMetadata,
-			timestamp != null ? Instant.parse(timestamp) : Instant.now(), false, null, null, null);
+			timestamp != null ? Instant.parse(timestamp) : Instant.now(), false, null, null, null,
+			CYCLONEDX_VERSIONS.get(0));
 	}
 
 	public static SbomConfig from(Project project, Map<String, String> options) {
@@ -130,9 +140,12 @@ public final class SbomConfig {
 		String serialNumber = value(reporter, values, SERIAL_NUMBER, SERIAL_CONTENT, SbomConfig::parseSerialNumber,
 			Stream.of(SERIAL_CONTENT, SERIAL_RANDOM));
 
+		String cyclonedxVersion = value(reporter, values, CYCLONEDX_VERSION, CYCLONEDX_VERSIONS.get(0),
+			v -> CYCLONEDX_VERSIONS.contains(v) ? Optional.of(v) : Optional.empty(), CYCLONEDX_VERSIONS.stream());
+
 		return new SbomConfig(level, format, includeOSGIMetadata, created != null ? created : Instant.now(),
 			SERIAL_RANDOM.equals(serialNumber), text(values, APP_NAME), text(values, APP_GROUP),
-			text(values, APP_VERSION));
+			text(values, APP_VERSION), cyclonedxVersion);
 	}
 
 	/**
@@ -225,6 +238,20 @@ public final class SbomConfig {
 		return randomSerialNumber;
 	}
 
+	/** CycloneDX specification version to write ({@code cyclonedx.version}), default 1.6. */
+	public String cyclonedxVersion() {
+		return cyclonedxVersion;
+	}
+
+	/** A copy writing the given CycloneDX version (for tests and the Maven/Gradle wrappers). */
+	public SbomConfig withCyclonedxVersion(String version) {
+		if (!CYCLONEDX_VERSIONS.contains(version)) {
+			throw new IllegalArgumentException("Unsupported CycloneDX version " + version + ", supported: " + CYCLONEDX_VERSIONS);
+		}
+		return new SbomConfig(level, format, includeOSGIMetadata, created, randomSerialNumber, applicationName,
+			applicationGroup, applicationVersion, version);
+	}
+
 	/** {@code application.name} from {@code -sbom} or the options, or {@code null}. */
 	public String applicationName() {
 		return applicationName;
@@ -243,6 +270,6 @@ public final class SbomConfig {
 	/** A copy with a random serial number (for tests and the Maven/Gradle wrappers). */
 	public SbomConfig withRandomSerialNumber() {
 		return new SbomConfig(level, format, includeOSGIMetadata, created, true, applicationName, applicationGroup,
-			applicationVersion);
+			applicationVersion, cyclonedxVersion);
 	}
 }
