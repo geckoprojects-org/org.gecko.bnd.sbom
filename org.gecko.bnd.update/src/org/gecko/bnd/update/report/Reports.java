@@ -236,11 +236,20 @@ public final class Reports {
 			.allResolve());
 		root.put("build", report.build() == null ? null : report.build()
 			.ok());
+		root.put("baselineResolves", report.baseline() == null || report.baseline()
+			.allResolve());
 		return encode(root);
 	}
 
 	public static String markdown(ApplyReport report) {
 		StringBuilder md = new StringBuilder("## Applied updates\n\n");
+		if (report.baselineFails()) {
+			return md.append("**No update applied: the workspace does not resolve even without updates.** ")
+				.append("Build the workspace's own bundles first (e.g. `./gradlew assemble`), ")
+				.append("then run apply again.\n\n")
+				.append(markdown(report.baseline()))
+				.toString();
+		}
 		List<AppliedUpdate> applied = report.withStatus(AppliedUpdate.Status.APPLIED);
 		if (applied.isEmpty()) {
 			md.append("No update applied.\n");

@@ -81,8 +81,18 @@ public final class UpdateApplier {
 				applicable.add(update);
 			}
 		}
+		ResolveReport baseline = resolveAll();
 		if (applicable.isEmpty()) {
-			return new ApplyReport(mode, results, resolveAll(), null);
+			return new ApplyReport(mode, results, baseline, null, baseline);
+		}
+		// Every bndrun has to resolve before an update is tried; otherwise every update would
+		// be blamed for a failure it did not cause.
+		if (!baseline.allResolve()) {
+			for (Update update : applicable) {
+				results.add(new AppliedUpdate(update, AppliedUpdate.Status.NOT_APPLIED,
+					"the workspace does not resolve without updates"));
+			}
+			return new ApplyReport(mode, results, baseline, null, baseline);
 		}
 
 		if (mode == Mode.ALL) {
@@ -121,7 +131,7 @@ public final class UpdateApplier {
 		}
 		// the last successful build is the one of the final state: every later update that
 		// failed was reverted
-		return new ApplyReport(mode, results, resolveAll(), lastSuccessfulBuild);
+		return new ApplyReport(mode, results, resolveAll(), lastSuccessfulBuild, baseline);
 	}
 
 	private BuildStep.Result lastSuccessfulBuild;

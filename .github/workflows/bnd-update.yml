@@ -1,0 +1,105 @@
+# Dependency updates for this workspace with bnd update itself (dogfooding of
+# .github/actions/bnd-update): weekly, micro updates within the -update-policy, one by one,
+# verified by resolving every bndrun and a build; the result becomes one pull request.
+#
+# On pull requests that change the action or the tool, the action runs without opening a pull
+# request: once with the jar built from the pull request, once with the published one.
+name: bnd update
+
+on:
+  schedule:
+    # weekly, Tuesday 05:23 UTC
+    - cron: '23 5 * * 2'
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: Default scope for this run (micro, minor, major)
+        default: micro
+  pull_request:
+    paths:
+      - '.github/actions/bnd-update/**'
+      - '.github/workflows/bnd-update.yml'
+      - 'org.gecko.bnd.update/**'
+      - 'org.gecko.bnd.update.cli/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bnd-update-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  update:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Java 21
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+
+      # The workspace's own bundles must exist before bndruns can resolve; this also builds the
+      # tool, so the jar of this commit is used.
+      - name: Build the workspace
+        run: ./gradlew assemble --no-daemon --stacktrace
+
+      - name: Apply updates
+        uses: ./.github/actions/bnd-update
+        with:
+          cli-jar: org.gecko.bnd.update.cli/generated/org.gecko.bnd.update.cli.jar
+          scope: ${{ inputs.scope || 'micro' }}
+          mode: each
+          build-command: ./gradlew build -x test --no-daemon -q
+
+  check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    # The published jar is the last snapshot: it cannot know options a pull request adds, so its
+    # run tests the download (checksum included) and is informational only.
+    continue-on-error: ${{ matrix.cli == 'published' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        cli: [built, published]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Java 21
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+
+      # The workspace's own bundles must exist before bndruns can resolve (and the built jar).
+      - name: Build the workspace
+        run: ./gradlew assemble --no-daemon --stacktrace
+
+      - name: Apply updates (no pull request)
+        id: bnd-update
+        uses: ./.github/actions/bnd-update
+        with:
+          cli-jar: ${{ matrix.cli == 'built' && 'org.gecko.bnd.update.cli/generated/org.gecko.bnd.update.cli.jar' || '' }}
+          mode: each
+          create-pull-request: 'false'
+
+      - name: Result
+        env:
+          CODE: ${{ steps.bnd-update.outputs.exit-code }}
+        run: |
+          echo "bnd-update apply exit code: $CODE"
+          git status --short

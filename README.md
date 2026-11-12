@@ -145,9 +145,12 @@ where configured, per library if needed; variants such as guava `-jre`/`-android
 `./gradlew resolve`: narrow import ranges can make a
 bndrun unresolvable, and an update can change what other bndruns resolve to.
 
+**GitHub Action** `.github/actions/bnd-update` runs `apply` and opens (or updates) one pull
+request with the verified updates and the report; this repository runs it on itself weekly.
+
 Exit codes (0 nothing to do, 1 fixes within the policy, 2 something needs a decision), the
-fix-version rules, library API, CI examples for Jenkins, GitLab and GitHub, limits:
-[docs/bnd-update.md](docs/bnd-update.md).
+fix-version rules, library API, the action's inputs, CI examples for Jenkins, GitLab and GitHub,
+limits: [docs/bnd-update.md](docs/bnd-update.md).
 
 ## Maven scopes in bnd-generated POMs
 
