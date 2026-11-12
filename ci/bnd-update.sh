@@ -39,7 +39,8 @@
 #
 #   GitHub:  GITHUB_TOKEN, GITHUB_REPOSITORY (owner/repo), GITHUB_API_URL (default https://api.github.com),
 #            GITHUB_SERVER (default github.com)
-#   GitLab:  GITLAB_TOKEN, CI_PROJECT_ID, CI_PROJECT_PATH, CI_API_V4_URL, CI_SERVER_HOST (set by GitLab CI)
+#   GitLab:  GITLAB_TOKEN, CI_PROJECT_ID, CI_PROJECT_PATH, CI_API_V4_URL, CI_SERVER_URL (set by GitLab CI;
+#            CI_SERVER_HOST is used when CI_SERVER_URL is not set)
 #   Neither: the updates are committed locally only.
 #
 # Exit codes: 0 done (or nothing to do), 2 an update was reverted and FAIL_ON_REVERTED=true,
@@ -185,7 +186,8 @@ if [ -n "${GITHUB_TOKEN:-}" ] && [ -n "${GITHUB_REPOSITORY:-}" ]; then
   auth=(-H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28")
   existing="$(curl -fsSL "${auth[@]}" "$api/repos/$GITHUB_REPOSITORY/pulls?head=$owner:$BRANCH&state=open" | json_first number)"
   if [ "$DRY_RUN" = true ]; then
-    log "DRY_RUN: would push $BRANCH to $server/$GITHUB_REPOSITORY and ${existing:+update pull request #$existing}${existing:-open a pull request into $BASE}"
+    if [ -n "$existing" ]; then request="update pull request #$existing"; else request="open a pull request into $BASE"; fi
+    log "DRY_RUN: would push $BRANCH to $server/$GITHUB_REPOSITORY and $request"
     exit 0
   fi
   git push -q --force "https://x-access-token:${GITHUB_TOKEN}@${server}/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/$BRANCH" 2>&1 | mask "$GITHUB_TOKEN"
@@ -205,15 +207,17 @@ if [ -n "${GITHUB_TOKEN:-}" ] && [ -n "${GITHUB_REPOSITORY:-}" ]; then
 
 elif [ -n "${GITLAB_TOKEN:-}" ] && [ -n "${CI_PROJECT_ID:-}" ]; then
   api="${CI_API_V4_URL:-https://gitlab.com/api/v4}"
-  host="${CI_SERVER_HOST:-gitlab.com}"
+  server="${CI_SERVER_URL:-https://${CI_SERVER_HOST:-gitlab.com}}"
+  server="${server%/}"
   [ -n "${CI_PROJECT_PATH:-}" ] || die "CI_PROJECT_PATH is needed to push to GitLab"
   auth=(-H "PRIVATE-TOKEN: $GITLAB_TOKEN" -H "Content-Type: application/json")
   existing="$(curl -fsSL "${auth[@]}" "$api/projects/$CI_PROJECT_ID/merge_requests?state=opened&source_branch=$BRANCH" | json_first iid)"
   if [ "$DRY_RUN" = true ]; then
-    log "DRY_RUN: would push $BRANCH to $host/$CI_PROJECT_PATH and ${existing:+update merge request !$existing}${existing:-open a merge request into $BASE}"
+    if [ -n "$existing" ]; then request="update merge request !$existing"; else request="open a merge request into $BASE"; fi
+    log "DRY_RUN: would push $BRANCH to $server/$CI_PROJECT_PATH and $request"
     exit 0
   fi
-  git push -q --force "https://oauth2:${GITLAB_TOKEN}@${host}/${CI_PROJECT_PATH}.git" "HEAD:refs/heads/$BRANCH" 2>&1 | mask "$GITLAB_TOKEN"
+  git push -q --force "${server%%://*}://oauth2:${GITLAB_TOKEN}@${server#*://}/${CI_PROJECT_PATH}.git" "HEAD:refs/heads/$BRANCH" 2>&1 | mask "$GITLAB_TOKEN"
   if [ -n "$existing" ]; then
     curl -fsSL "${auth[@]}" -X PUT "$api/projects/$CI_PROJECT_ID/merge_requests/$existing" \
       -d "{\"title\":\"$(json_escape "$TITLE")\",\"description\":\"$(json_escape "$BODY")\"}" >/dev/null

@@ -1,0 +1,55 @@
+# bnd update for GitLab CI (docs/bnd-update.md): applies the updates the version policy allows,
+# verifies them (every bndrun resolves, the build passes), commits them on a branch and opens -
+# or updates - one merge request. A wrapper around ci/bnd-update.sh; see ci/gitlab/README.md.
+#
+# Include it pinned to a commit, with its checksum, and extend the hidden job:
+#
+#   include:
+#     - remote: https://raw.githubusercontent.com/geckoprojects-org/org.gecko.bnd.sbom/<commit>/ci/gitlab/bnd-update.gitlab-ci.yml
+#       integrity: sha256-<base64 of the SHA-256>
+#
+#   bnd-update:
+#     extends: .bnd-update
+#     variables:
+#       BND_UPDATE_COMMIT: <commit>
+#       BND_UPDATE_SHA256: <sha256sum of ci/bnd-update.sh at that commit>
+#
+# GITLAB_TOKEN (masked CI/CD variable): a project access token with the api and write_repository
+# scopes. The job token cannot push or open merge requests.
+
+.bnd-update:
+  image: eclipse-temurin:21-jdk
+  variables:
+    # the full history: the update branch is pushed on top of the checked-out commit
+    GIT_DEPTH: "0"
+    # pinned script: commit of org.gecko.bnd.sbom and SHA-256 of its ci/bnd-update.sh
+    BND_UPDATE_COMMIT: ""
+    BND_UPDATE_SHA256: ""
+    # builds the workspace's own bundles, so that the bndruns that run them resolve
+    PREPARE_COMMAND: "./gradlew assemble --no-daemon"
+    # verifies each update; empty: resolving every bndrun is the only check
+    BUILD_COMMAND: "./gradlew build -x test --no-daemon"
+    # the commit (and its Signed-off-by) is made by whoever owns the schedule or ran the pipeline
+    GIT_NAME: "$GITLAB_USER_NAME"
+    GIT_EMAIL: "$GITLAB_USER_EMAIL"
+    # further settings (MODE, SCOPE, ONLY, TRIVY_REPORT, SBOM, BRANCH, BASE, TITLE, LABELS,
+    # CLI_VERSION, CLI_JAR, DRY_RUN, FAIL_ON_REVERTED): see the header of ci/bnd-update.sh
+  rules:
+    # a pipeline schedule (or a manual pipeline) with the variable BND_UPDATE=true
+    - if: '$BND_UPDATE == "true" && ($CI_PIPELINE_SOURCE == "schedule" || $CI_PIPELINE_SOURCE == "web")'
+  resource_group: bnd-update
+  before_script:
+    - command -v git >/dev/null || (apt-get update -qq && apt-get install -y -qq --no-install-recommends git >/dev/null)
+  script:
+    - test -n "$GITLAB_TOKEN" || { echo "GITLAB_TOKEN is not set (project access token, api + write_repository)"; exit 1; }
+    - test -n "$BND_UPDATE_COMMIT" && test -n "$BND_UPDATE_SHA256" || { echo "set BND_UPDATE_COMMIT and BND_UPDATE_SHA256"; exit 1; }
+    - curl -fsSL -o "$CI_BUILDS_DIR/bnd-update.sh" "https://raw.githubusercontent.com/geckoprojects-org/org.gecko.bnd.sbom/$BND_UPDATE_COMMIT/ci/bnd-update.sh"
+    - echo "$BND_UPDATE_SHA256  $CI_BUILDS_DIR/bnd-update.sh" | sha256sum -c --strict -
+    - test -z "$PREPARE_COMMAND" || bash -c "$PREPARE_COMMAND"
+    # GitLab checks out a detached HEAD; the target branch is the one the pipeline runs for
+    - BASE="${BASE:-$CI_COMMIT_BRANCH}" bash "$CI_BUILDS_DIR/bnd-update.sh"
+  artifacts:
+    when: always
+    expire_in: 30 days
+    paths:
+      - bnd-update-report.md

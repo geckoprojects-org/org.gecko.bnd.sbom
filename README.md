@@ -148,7 +148,8 @@ bndrun unresolvable, and an update can change what other bndruns resolve to.
 **GitHub Action** `.github/actions/bnd-update` runs `apply` and opens (or updates) one pull
 request with the verified updates and the report; this repository runs it on itself weekly.
 For Jenkins (and GitLab CI) `ci/bnd-update.sh` does the same with plain bash, git, curl and Java:
-see [ci/jenkins/README.md](ci/jenkins/README.md). For Maven projects: the SBOM comes from
+see [ci/jenkins/README.md](ci/jenkins/README.md) and, for GitLab CI with a ready-made template,
+[ci/gitlab/README.md](ci/gitlab/README.md). For Maven projects: the SBOM comes from
 `bnd-export-maven-plugin` with this exporter, the fixes from `bnd-update-maven-plugin`
 (goal `vulnerabilities`) — runnable in [examples/maven-sbom](examples/maven-sbom/README.md).
 For Gradle builds, the plugin `org.geckoprojects.bnd.update` adds the tasks `bndUpdates`,
