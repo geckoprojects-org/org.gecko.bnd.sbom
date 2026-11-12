@@ -32,11 +32,16 @@ The SBOM is written to the project's `generated/` folder as `<name>.bndrun.cdx.j
 | `level` | `simple` (name, version, PURL), `medium` (adds hashes and licenses), `full` | `simple` |
 | `format` | `cyclonedx`, `spdx` | `cyclonedx` |
 | `includeOSGIMetadata` | `true`, `false` | `false` |
+| `timestamp` | ISO-8601 instant, e.g. `2026-01-01T00:00:00Z`, for reproducible builds | time of the export |
+| `serialNumber` | `content` (derived from format, level, application and components: an unchanged application keeps its serial number), `random` | `content` |
+| `application.name`, `application.group`, `application.version` | identity of the application in the metadata | bndrun name, `-groupid`, `Bundle-Version` |
+| `cyclonedx.version` | `1.6`, `1.7` (written with the matching `$schema`) | `1.6` |
 
 ### Configuration in the `.bndrun`
 
 The options can be set declaratively in the `.bndrun` with the `-sbom` instruction. The
-entries are separated by **commas** (a semicolon is a syntax error):
+entries are separated by commas; semicolons are accepted as well. Invalid values (e.g. `level=mediun`)
+are reported as errors and no SBOM is written; unknown options are reported as warnings.
 
 ```
 -sbom: level=medium, format=spdx

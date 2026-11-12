@@ -1,12 +1,18 @@
 import aQute.bnd.gradle.Export
 
 // Dogfooding: the SBOM of runtime.bndrun, written by the exporter this project builds.
-// The CI hands the result to Trivy (.github/workflows/build.yml).
-tasks.register('sbom', Export) {
-    description = 'Writes the SBOM of runtime.bndrun with the exporter built in this project.'
-    group = 'export'
-    bndrun = file('runtime.bndrun')
-    exporter = 'bnd.sbom'
-    destinationDirectory = layout.buildDirectory.dir('sbom')
-    dependsOn tasks.named('jar')
+// The CI validates the results and hands them to Trivy (.github/workflows/sbom.yml).
+// One export task per bndrun: 'sbom' for runtime.bndrun (CycloneDX 1.6), 'sbomSpdx' and
+// 'sbomCdx17' for the other output formats, which CI validates against their schemas.
+[sbom: 'runtime', sbomSpdx: 'runtime-spdx', sbomCdx17: 'runtime-cdx17'].each { taskName, bndrunName ->
+    tasks.register(taskName, Export) {
+        description = "Writes the SBOM of ${bndrunName}.bndrun with the exporter built in this project."
+        group = 'export'
+        bndrun = file("${bndrunName}.bndrun")
+        exporter = 'bnd.sbom'
+        destinationDirectory = layout.buildDirectory.dir("sbom/${bndrunName}")
+        // The exporter is loaded from this jar (-plugin in runtime.bndrun): a changed exporter must
+        // produce a new SBOM, so the jar is an input, not only a predecessor.
+        inputs.files(tasks.named('jar'))
+    }
 }

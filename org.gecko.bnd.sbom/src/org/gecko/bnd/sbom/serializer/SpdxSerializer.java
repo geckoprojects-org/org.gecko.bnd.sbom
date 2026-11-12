@@ -13,7 +13,6 @@
  */
 package org.gecko.bnd.sbom.serializer;
 
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -21,9 +20,12 @@ import java.util.Locale;
 import java.util.Map;
 
 import org.gecko.bnd.sbom.SbomConfig;
+import org.gecko.bnd.sbom.model.MavenCoordinates;
 import org.gecko.bnd.sbom.model.SbomComponent;
 import org.gecko.bnd.sbom.model.SbomLicense;
 import org.gecko.bnd.sbom.model.SbomModel;
+import org.gecko.bnd.sbom.model.SbomRefs;
+import org.gecko.bnd.sbom.model.SbomTool;
 import aQute.bnd.osgi.EmbeddedResource;
 import aQute.bnd.osgi.Resource;
 import aQute.lib.json.JSONCodec;
@@ -33,8 +35,9 @@ import aQute.lib.json.JSONCodec;
  * format-neutral model as {@link CycloneDxSerializer}; only the mapping differs. Built as
  * {@code Map}/{@code List} and encoded with bnd's {@link JSONCodec}, no external SPDX library.
  * <p>
- * SPDX is document/relationship-centric: each component becomes a {@code package}, linked from
- * the document via a {@code DESCRIBES} relationship. A PURL travels in {@code externalRefs}.
+ * SPDX is document/relationship-centric: the application and each component become a
+ * {@code package}; the document {@code DESCRIBES} the application, which {@code CONTAINS} the
+ * components. A PURL travels in {@code externalRefs}.
  * Licenses become a license expression ({@code A AND B}); a free-text license that has no SPDX
  * id is emitted as a {@code LicenseRef} declared in {@code hasExtractedLicensingInfos} (rather
  * than lost to {@code NOASSERTION}).
@@ -54,19 +57,30 @@ public final class SpdxSerializer implements SbomSerializer {
 
 	@Override
 	public Resource serialize(SbomModel model, SbomConfig config) throws Exception {
-		String created = config.timestamp() != null ? config.timestamp()
-			: Instant.now()
-				.toString();
+		String created = config.created()
+			.toString();
 		String appName = model.getApplicationName() != null ? model.getApplicationName() : "application";
 
 		ExtractedLicenses extracted = new ExtractedLicenses();
 		List<Object> packages = new ArrayList<>();
 		List<Object> relationships = new ArrayList<>();
-		int index = 0;
+		SbomRefs refs = SbomRefs.of(model);
+		// #15: the document describes the application, which contains the components
+		packages.add(application(refs.spdxApplication(), model));
+		relationships.add(relationship(DOCUMENT_ID, "DESCRIBES", refs.spdxApplication()));
 		for (SbomComponent component : model.getComponents()) {
-			String spdxId = "SPDXRef-Package-" + index++;
+			String spdxId = refs.spdxOf(component);
 			packages.add(pkg(spdxId, component, extracted));
-			relationships.add(relationship(DOCUMENT_ID, "DESCRIBES", spdxId));
+			relationships.add(relationship(refs.spdxApplication(), "CONTAINS", spdxId));
+		}
+		// #13: the dependency graph
+		for (SbomComponent target : model.getApplicationDependencies()) {
+			relationships.add(relationship(refs.spdxApplication(), "DEPENDS_ON", refs.spdxOf(target)));
+		}
+		for (SbomComponent component : model.getComponents()) {
+			for (SbomComponent target : model.getDependencies(component)) {
+				relationships.add(relationship(refs.spdxOf(component), "DEPENDS_ON", refs.spdxOf(target)));
+			}
 		}
 
 		Map<String, Object> doc = new LinkedHashMap<>();
@@ -74,7 +88,9 @@ public final class SpdxSerializer implements SbomSerializer {
 		doc.put("dataLicense", "CC0-1.0");
 		doc.put("SPDXID", DOCUMENT_ID);
 		doc.put("name", appName);
-		doc.put("documentNamespace", NAMESPACE_BASE + sanitize(appName) + "-" + sanitize(created));
+		// #12: the same rule as CycloneDX's serialNumber — derived from the content, not the time
+		doc.put("documentNamespace",
+			NAMESPACE_BASE + sanitize(appName) + "-" + SerialNumbers.of(model, refs, config));
 		doc.put("creationInfo", creationInfo(created, model));
 		if (!extracted.infos.isEmpty()) {
 			doc.put("hasExtractedLicensingInfos", extracted.infos);
@@ -86,13 +102,47 @@ public final class SpdxSerializer implements SbomSerializer {
 			.indent("  ")
 			.put(doc)
 			.toString();
-		return new EmbeddedResource(json, 0L);
+		return new EmbeddedResource(json, config.created()
+			.toEpochMilli());
+	}
+
+	/** {@code Tool: name-version} per tool; without any (a model built by hand) this exporter. */
+	private static List<Object> creators(SbomModel model) {
+		List<Object> creators = new ArrayList<>();
+		for (SbomTool tool : model.getTools()) {
+			creators.add("Tool: " + tool.name() + (tool.version() != null ? "-" + tool.version() : ""));
+		}
+		if (creators.isEmpty()) {
+			creators.add("Tool: org.gecko.bnd.sbom");
+		}
+		return creators;
+	}
+
+	private static Map<String, Object> application(String spdxId, SbomModel model) {
+		Map<String, Object> pkg = new LinkedHashMap<>();
+		pkg.put("SPDXID", spdxId);
+		pkg.put("name", model.getApplicationName() != null ? model.getApplicationName() : "application");
+		if (model.getApplicationVersion() != null) {
+			pkg.put("versionInfo", model.getApplicationVersion());
+		}
+		pkg.put("primaryPackagePurpose", "APPLICATION");
+		pkg.put("downloadLocation", model.getVcsUrl() != null ? "git+" + model.getVcsUrl() : NOASSERTION);
+		pkg.put("filesAnalyzed", false);
+		pkg.put("licenseConcluded", NOASSERTION);
+		pkg.put("licenseDeclared", NOASSERTION);
+		if (model.getWebsiteUrl() != null) {
+			pkg.put("homepage", model.getWebsiteUrl());
+		}
+		if (model.getApplicationGroup() != null) {
+			pkg.put("comment", "Group: " + model.getApplicationGroup() + ".");
+		}
+		return pkg;
 	}
 
 	private Map<String, Object> creationInfo(String created, SbomModel model) {
 		Map<String, Object> info = new LinkedHashMap<>();
 		info.put("created", created);
-		info.put("creators", listOf("Tool: bnd-SBOM-Exporter"));
+		info.put("creators", creators(model));
 		// A2.5/Q4: SPDX has no "aggregate" field; declare completeness + gaps in the comment.
 		StringBuilder comment = new StringBuilder(
 			model.isDependenciesComplete() ? "Dependencies complete." : "Dependencies incomplete.");
@@ -108,9 +158,17 @@ public final class SpdxSerializer implements SbomSerializer {
 	private Map<String, Object> pkg(String spdxId, SbomComponent component, ExtractedLicenses extracted) {
 		Map<String, Object> pkg = new LinkedHashMap<>();
 		pkg.put("SPDXID", spdxId);
-		pkg.put("name", component.getBsn());
-		if (component.getVersion() != null) {
-			pkg.put("versionInfo", component.getVersion());
+		// Name and version agree with the PURL: Maven coordinates when verified, otherwise the
+		// OSGi identity (#14).
+		MavenCoordinates maven = component.getMaven();
+		if (maven != null) {
+			pkg.put("name", maven.artifactId());
+			pkg.put("versionInfo", maven.version());
+		} else {
+			pkg.put("name", component.getBsn());
+			if (component.getVersion() != null) {
+				pkg.put("versionInfo", component.getVersion());
+			}
 		}
 		pkg.put("downloadLocation", NOASSERTION);
 		pkg.put("filesAnalyzed", false);
@@ -132,9 +190,18 @@ public final class SpdxSerializer implements SbomSerializer {
 			ref.put("referenceLocator", component.getPurl());
 			pkg.put("externalRefs", listOf(ref));
 		}
-		// Q3.b: unresolvable identity is flagged, not given a fake purl.
+		// SPDX 2.3 has no free properties: the OSGi identity, which the framework sees, goes into
+		// the comment. Q3.b: an unresolvable identity is flagged, not given a fake purl.
+		List<String> comment = new ArrayList<>();
+		if (component.getBsn() != null) {
+			comment.add("OSGi bundle: " + component.getBsn()
+				+ (component.getVersion() != null ? " " + component.getVersion() : "") + ".");
+		}
 		if (component.isUnverifiedIdentity()) {
-			pkg.put("comment", "Identity unverified (reduced matchability): no reliable PURL.");
+			comment.add("Identity unverified (reduced matchability): no reliable PURL.");
+		}
+		if (!comment.isEmpty()) {
+			pkg.put("comment", String.join(" ", comment));
 		}
 		return pkg;
 	}
@@ -152,7 +219,14 @@ public final class SpdxSerializer implements SbomSerializer {
 		}
 		List<String> parts = new ArrayList<>();
 		for (SbomLicense license : component.getLicenses()) {
-			parts.add(license.isSpdx() ? license.spdxId() : extracted.refFor(license.name()));
+			parts.add(license.isSpdx() || license.isExpression() ? license.asOperand() : extracted.refFor(license.name()));
+		}
+		if (parts.size() == 1 && component.getLicenses()
+			.get(0)
+			.isExpression()) {
+			return component.getLicenses()
+				.get(0)
+				.expression();
 		}
 		return String.join(" AND ", parts);
 	}

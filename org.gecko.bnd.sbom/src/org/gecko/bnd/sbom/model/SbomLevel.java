@@ -13,6 +13,8 @@
  */
 package org.gecko.bnd.sbom.model;
 
+import java.util.Optional;
+
 /**
  * Cumulative maturity levels (each level is a superset of the previous). Named neutrally,
  * not after a regulation — see requirements/anforderungen-sbom-schichten.md §7. The output
@@ -42,14 +44,15 @@ public enum SbomLevel {
 		return ordinal() >= other.ordinal();
 	}
 
-	public static SbomLevel parse(String value) {
+	/** The constant with the given id (case-insensitive), or empty for an unknown id. */
+	public static Optional<SbomLevel> find(String value) {
 		if (value != null) {
-			for (SbomLevel level : values()) {
-				if (level.id.equalsIgnoreCase(value.trim())) {
-					return level;
+			for (SbomLevel candidate : values()) {
+				if (candidate.id.equalsIgnoreCase(value.trim())) {
+					return Optional.of(candidate);
 				}
 			}
 		}
-		return SIMPLE;
+		return Optional.empty();
 	}
 }

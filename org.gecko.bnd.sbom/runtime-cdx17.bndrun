@@ -1,0 +1,5 @@
+# runtime.bndrun as CycloneDX 1.7, so that CI validates this output format against its schema as well
+# (sbom.yml). The leading ~ keeps the -sbom below instead of the included one.
+-include: ~${.}/runtime.bndrun
+
+-sbom: level=medium, format=cyclonedx, cyclonedx.version=1.7

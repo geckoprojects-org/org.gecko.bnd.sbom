@@ -17,11 +17,17 @@ import java.io.File;
 import java.security.MessageDigest;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.Set;
+import java.util.jar.Manifest;
 
 import aQute.bnd.build.Container;
 import aQute.bnd.build.Project;
+import aQute.bnd.header.OSGiHeader;
+import aQute.bnd.osgi.Constants;
+import org.gecko.bnd.sbom.model.MavenCoordinates;
 import org.gecko.bnd.sbom.model.SbomComponent;
 import org.gecko.bnd.sbom.model.SbomComponent.Category;
 import org.gecko.bnd.sbom.model.SbomLevel;
@@ -43,6 +49,8 @@ public final class SbomModelBuilder {
 	/** de-duplicates components that appear in more than one layer (bsn|version). */
 	private final Set<String>		seen			= new LinkedHashSet<>();
 	private Collection<Container>	runbundles		= Collections.emptyList();
+	/** manifests of the components, for the dependency graph */
+	private final Map<SbomComponent, Manifest>	manifests	= new LinkedHashMap<>();
 
 	public SbomModelBuilder(Project project, SbomConfig config) {
 		this.project = project;
@@ -56,7 +64,16 @@ public final class SbomModelBuilder {
 	}
 
 	public SbomModel build() throws Exception {
-		SbomModel model = new SbomModel().setApplicationName(project.getName());
+		// #15: identity of the application — overridable through -sbom, otherwise what the
+		// workspace declares for its artifacts (-groupid, Bundle-Version, Bundle-SCM, Bundle-DocURL)
+		SbomModel model = new SbomModel()
+			.setApplicationName(firstOf(config.applicationName(), project.getName()))
+			.setApplicationGroup(firstOf(config.applicationGroup(), project.getProperty(Constants.GROUPID)))
+			.setApplicationVersion(firstOf(config.applicationVersion(), project.getProperty(Constants.BUNDLE_VERSION)))
+			.setVcsUrl(scmUrl(project.getProperty(Constants.BUNDLE_SCM)))
+			.setWebsiteUrl(firstOf(project.getProperty(Constants.BUNDLE_DOCURL)));
+		Tools.current()
+			.forEach(model::addTool);
 
 		// View 2, A2.1: the resolved application bundles.
 		add(model, runbundles, null);
@@ -66,6 +83,18 @@ public final class SbomModelBuilder {
 		// attributes, so the same PURL/license resolution applies.
 		add(model, project.getRunFw(), Category.FRAMEWORK);
 		add(model, project.getRunpath(), Category.FRAMEWORK);
+
+		// #13: who depends on whom, from the manifests of the resolved set
+		DependencyGraph graph = new DependencyGraph(manifests);
+		graph.edges()
+			.forEach((from, to) -> to.forEach(target -> model.addDependency(from, target)));
+		graph.roots(project.getProperty(Constants.RUNREQUIRES))
+			.forEach(model::addApplicationDependency);
+		for (SbomComponent component : model.getComponents()) {
+			if (component.getCategory() == Category.FRAMEWORK) {
+				model.addApplicationDependency(component);
+			}
+		}
 
 		// A2.5/Q4: system packages, boot delegation and DynamicImport-Package are out of the
 		// current scope and are declared as gaps rather than silently omitted.
@@ -83,7 +112,9 @@ public final class SbomModelBuilder {
 		for (Container container : containers) {
 			String key = container.getBundleSymbolicName() + "|" + container.getVersion();
 			if (seen.add(key)) {
-				model.addComponent(toComponent(container, category));
+				SbomComponent component = toComponent(container, category);
+				model.addComponent(component);
+				manifests.put(component, container.getManifest());
 			}
 		}
 	}
@@ -93,10 +124,12 @@ public final class SbomModelBuilder {
 			.setVersion(container.getVersion())
 			.setCategory(category);
 
-		// Q3: staged identity resolution → PURL; otherwise mark honestly as unverified.
-		String purl = purlResolver.resolve(container);
-		if (purl != null) {
-			component.setPurl(purl);
+		// Q3: staged identity resolution → Maven coordinates + PURL; otherwise mark honestly as
+		// unverified.
+		MavenCoordinates maven = purlResolver.resolve(container);
+		if (maven != null) {
+			component.setMaven(maven)
+				.setPurl(Purl.maven(maven));
 		} else {
 			component.setUnverifiedIdentity(true);
 		}
@@ -115,6 +148,29 @@ public final class SbomModelBuilder {
 		}
 
 		return component;
+	}
+
+	/** The first value that is not blank, or {@code null}. */
+	static String firstOf(String... values) {
+		for (String value : values) {
+			if (value != null && !value.isBlank()) {
+				return value.trim();
+			}
+		}
+		return null;
+	}
+
+	/** The {@code url} of a {@code Bundle-SCM} header ({@code url=..., connection=...}). */
+	static String scmUrl(String bundleScm) {
+		if (bundleScm == null || bundleScm.isBlank()) {
+			return null;
+		}
+		try {
+			return firstOf(OSGiHeader.parseProperties(bundleScm)
+				.get("url"));
+		} catch (IllegalArgumentException e) {
+			return null;
+		}
 	}
 
 	private static String sha512(File file) throws Exception {

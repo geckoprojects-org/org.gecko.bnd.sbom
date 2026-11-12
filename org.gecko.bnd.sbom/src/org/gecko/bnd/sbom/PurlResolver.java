@@ -19,6 +19,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 
+import org.gecko.bnd.sbom.model.MavenCoordinates;
+
 import aQute.bnd.build.Container;
 import aQute.bnd.build.Project;
 import aQute.bnd.maven.MavenCapability;
@@ -52,14 +54,14 @@ public final class PurlResolver {
 	}
 
 	/**
-	 * @return a {@code pkg:maven/...} PURL, or {@code null} if the identity cannot be
+	 * @return the verified Maven coordinates, or {@code null} if the identity cannot be
 	 *         determined reliably.
 	 */
-	public String resolve(Container container) throws Exception {
+	public MavenCoordinates resolve(Container container) throws Exception {
 		// getFile() forces the download blocker's maven-* attributes to be merged in.
 		File file = container.getFile();
 
-		String fromAttributes = fromContainerAttributes(container.getAttributes());
+		MavenCoordinates fromAttributes = fromContainerAttributes(container.getAttributes());
 		if (fromAttributes != null) {
 			return fromAttributes;
 		}
@@ -71,8 +73,8 @@ public final class PurlResolver {
 	}
 
 	/** Step 1 (authoritative): the GAV the Maven repository attached to the container. */
-	private static String fromContainerAttributes(Map<String, String> attributes) {
-		return Purl.maven(attributes.get(MavenCapability.CAPABILITY_GROUPID_ATTRIBUTE),
+	private static MavenCoordinates fromContainerAttributes(Map<String, String> attributes) {
+		return MavenCoordinates.of(attributes.get(MavenCapability.CAPABILITY_GROUPID_ATTRIBUTE),
 			attributes.get(MavenCapability.CAPABILITY_ARTIFACTID_ATTRIBUTE),
 			attributes.get(MavenCapability.CAPABILITY_VERSION_ATTRIBUTE),
 			attributes.get(MavenCapability.CAPABILITY_CLASSIFIER_ATTRIBUTE),
@@ -80,7 +82,7 @@ public final class PurlResolver {
 	}
 
 	/** Step 2 (fallback): the first {@code pom.properties} embedded in the JAR. */
-	private static String fromPomProperties(File file) throws Exception {
+	private static MavenCoordinates fromPomProperties(File file) throws Exception {
 		try (Jar jar = new Jar(file)) {
 			Optional<Resource> pom = jar.getResources(POM_PROPERTIES.matches())
 				.findFirst();
@@ -93,7 +95,7 @@ public final class PurlResolver {
 				props.load(in);
 			}
 			// pom.properties has no classifier/extension; a plain jar coordinate is fine.
-			return Purl.maven(props.getProperty("groupId"), props.getProperty("artifactId"),
+			return MavenCoordinates.of(props.getProperty("groupId"), props.getProperty("artifactId"),
 				props.getProperty("version"), null, null);
 		}
 	}

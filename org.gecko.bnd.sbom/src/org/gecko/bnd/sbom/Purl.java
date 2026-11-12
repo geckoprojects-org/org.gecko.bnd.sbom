@@ -15,6 +15,8 @@ package org.gecko.bnd.sbom;
 
 import java.nio.charset.StandardCharsets;
 
+import org.gecko.bnd.sbom.model.MavenCoordinates;
+
 /**
  * Minimal Package-URL (PURL) builder for the {@code maven} type. bnd has no PURL library, so
  * we build the canonical string ourselves and percent-encode per RFC 3986 (unreserved set
@@ -28,6 +30,12 @@ public final class Purl {
 	private static final String DEFAULT_MAVEN_TYPE = "jar";
 
 	private Purl() {}
+
+	/** @return the {@code pkg:maven/...} PURL of verified coordinates */
+	public static String maven(MavenCoordinates coordinates) {
+		return maven(coordinates.groupId(), coordinates.artifactId(), coordinates.version(), coordinates.classifier(),
+			coordinates.extension());
+	}
 
 	/**
 	 * @return a {@code pkg:maven/...} PURL, or {@code null} if group, artifact or version is
