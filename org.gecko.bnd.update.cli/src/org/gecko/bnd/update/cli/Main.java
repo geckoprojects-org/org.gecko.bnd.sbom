@@ -22,8 +22,12 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
+import org.gecko.bnd.update.AppliedUpdate;
+import org.gecko.bnd.update.ApplyReport;
 import org.gecko.bnd.update.BndrunResult;
+import org.gecko.bnd.update.BuildStep;
 import org.gecko.bnd.update.CheckReport;
 import org.gecko.bnd.update.Proposal;
 import org.gecko.bnd.update.ResolveCheck;
@@ -32,6 +36,7 @@ import org.gecko.bnd.update.Sbom;
 import org.gecko.bnd.update.Scope;
 import org.gecko.bnd.update.TrivyReport;
 import org.gecko.bnd.update.Update;
+import org.gecko.bnd.update.UpdateApplier;
 import org.gecko.bnd.update.UpdateFinder;
 import org.gecko.bnd.update.VersionPolicy;
 import org.gecko.bnd.update.VulnerabilityCheck;
@@ -41,13 +46,16 @@ import aQute.bnd.build.Workspace;
 import aQute.lib.io.IO;
 
 /**
- * Command line of the bnd update library. Reads only; it reports, it changes nothing.
+ * Command line of the bnd update library. {@code updates}, {@code vulnerabilities} and
+ * {@code resolve} only read; {@code apply} changes the {@code .mvn} indexes and the bndruns.
  *
  * <pre>
  * bnd-update updates         [--workspace DIR] [--scope micro|minor|major] [--format text|json|markdown] [--output FILE]
  * bnd-update vulnerabilities --trivy FILE [--sbom FILE] [--against-updates]
  *                            [--workspace DIR] [--scope ...] [--format ...] [--output FILE]
  * bnd-update resolve         [--workspace DIR] [--format ...] [--output FILE]
+ * bnd-update apply           [--only G:A,...] [--from-vulnerabilities FILE [--sbom FILE]] [--mode all|each]
+ *                            [--build-command CMD] [--workspace DIR] [--scope ...] [--format ...] [--output FILE]
  * </pre>
  *
  * Exit codes — {@code updates}: 0 nothing to update, 1 updates within the policy.
@@ -100,6 +108,7 @@ public final class Main {
 				case "updates" -> updates(options);
 				case "vulnerabilities" -> vulnerabilities(options);
 				case "resolve" -> resolve(options);
+				case "apply" -> apply(options);
 				default -> {
 					err.println("Unknown command: " + args[0]);
 					usage();
@@ -184,6 +193,96 @@ public final class Main {
 			return report.withStatus(BndrunResult.Status.CHANGED)
 				.isEmpty() ? OK : ACTIONABLE;
 		}
+	}
+
+	private int apply(Map<String, String> options) throws Exception {
+		File dir;
+		List<Update> updates;
+		try (Workspace workspace = workspace(options)) {
+			dir = workspace.getBase();
+			VersionPolicy policy = policy(workspace, options);
+			UpdateFinder finder = UpdateFinder.forWorkspace(workspace)
+				.withPolicy(policy);
+			if (options.containsKey("from-vulnerabilities")) {
+				TrivyReport trivy;
+				try (InputStream in = IO.stream(new File(options.get("from-vulnerabilities")))) {
+					trivy = TrivyReport.read(in);
+				}
+				Sbom sbom = null;
+				if (options.containsKey("sbom")) {
+					try (InputStream in = IO.stream(new File(options.get("sbom")))) {
+						sbom = Sbom.read(in);
+					}
+				}
+				updates = finder.forProposals(VulnerabilityCheck.forWorkspace(workspace)
+					.withPolicy(policy)
+					.check(sbom, trivy)
+					.proposals());
+			} else {
+				updates = finder.find();
+			}
+		}
+		String only = options.get("only");
+		if (only != null) {
+			List<Pattern> patterns = new ArrayList<>();
+			for (String p : only.split(",")) {
+				if (!p.isBlank()) {
+					patterns.add(Pattern.compile(Pattern.quote(p.trim())
+						.replace("*", "\\E[^:]*\\Q")));
+				}
+			}
+			updates = updates.stream()
+				.filter(u -> patterns.stream()
+					.anyMatch(p -> p.matcher(u.library()
+						.ga())
+						.matches()))
+				.toList();
+		}
+		UpdateApplier.Mode mode = switch (options.getOrDefault("mode", "all")) {
+			case "all" -> UpdateApplier.Mode.ALL;
+			case "each" -> UpdateApplier.Mode.EACH;
+			default -> throw new IllegalArgumentException("Unknown mode '" + options.get("mode") + "', expected all or each");
+		};
+		String command = options.get("build-command");
+		ApplyReport report = new UpdateApplier(dir, command != null ? BuildStep.command(command) : null).apply(updates,
+			mode);
+		String content = switch (format(options)) {
+			case "json" -> Reports.json(report);
+			case "markdown" -> Reports.markdown(report);
+			default -> text(report);
+		};
+		String output = options.get("output");
+		if (output == null) {
+			out.print(content);
+		} else {
+			Files.writeString(new File(output).toPath(), content, StandardCharsets.UTF_8);
+		}
+		if (report.anyReverted()) {
+			return NOT_FIXABLE;
+		}
+		return report.anyApplied() ? ACTIONABLE : OK;
+	}
+
+	private static String text(ApplyReport report) {
+		StringBuilder text = new StringBuilder();
+		for (AppliedUpdate a : report.updates()) {
+			text.append(String.format("%-60s %-16s -> %-16s %s%s%n", a.update()
+				.library()
+				.ga(),
+				a.update()
+					.library()
+					.version(),
+				a.update()
+					.proposed() != null ? a.update()
+						.proposed()
+						: "(" + a.update()
+							.latest() + ")",
+				a.status(), a.reason() != null ? "  " + a.reason()
+					.lines()
+					.findFirst()
+					.orElse("") : ""));
+		}
+		return text.length() == 0 ? "No update to apply.\n" : text.toString();
 	}
 
 	private static String text(ResolveReport report) {
@@ -279,7 +378,8 @@ public final class Main {
 	static Map<String, String> options(String[] args) {
 		Map<String, String> options = new LinkedHashMap<>();
 		List<String> flags = List.of("against-updates");
-		List<String> known = List.of("workspace", "scope", "format", "output", "trivy", "sbom");
+		List<String> known = List.of("workspace", "scope", "format", "output", "trivy", "sbom", "only",
+			"from-vulnerabilities", "mode", "build-command");
 		List<String> rest = new ArrayList<>(List.of(args)
 			.subList(1, args.length));
 		for (int i = 0; i < rest.size(); i++) {
@@ -309,6 +409,8 @@ public final class Main {
 			  bnd-update vulnerabilities --trivy FILE [--sbom FILE] [--against-updates]
 			                             [--workspace DIR] [--scope micro|minor|major] [--format text|json|markdown] [--output FILE]
 			  bnd-update resolve         [--workspace DIR] [--format text|json|markdown] [--output FILE]
+			  bnd-update apply           [--only G:A,...] [--from-vulnerabilities FILE [--sbom FILE]] [--mode all|each]
+			                             [--build-command CMD] [--workspace DIR] [--scope micro|minor|major] [--format ...] [--output FILE]
 
 			updates          newer versions of the libraries in the workspace's .mvn indexes,
 			                 the proposal is the highest version the version policy allows
@@ -317,11 +419,15 @@ public final class Main {
 			                 the library sits, --against-updates considers only the found updates
 			resolve          resolves every bndrun of the workspace (writes nothing) and compares the
 			                 result with the -runbundles in the files; lists unresolved requirements
+			apply            CHANGES THE WORKSPACE: applies the proposed updates (all, --only some, or
+			                 the fixes of a Trivy report) to the .mvn indexes, resolves every bndrun,
+			                 writes the new -runbundles, runs --build-command; reverts what fails.
+			                 --mode all: together, all or nothing; each: one by one, keeps what passes
 
 			--scope overrides the default scope of the workspace's -update-policy (default micro).
 
 			Exit codes: 0 nothing to do, 1 updates/fixes within the policy (resolve: some -runbundles
-			change), 2 a vulnerability has no fix within the policy (resolve: a bndrun does not
-			resolve), 64 usage error, 70 internal error.""");
+			change; apply: updates applied), 2 a vulnerability has no fix within the policy (resolve:
+			a bndrun does not resolve; apply: an update was reverted), 64 usage error, 70 internal error.""");
 	}
 }

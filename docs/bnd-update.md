@@ -1,14 +1,16 @@
 # bnd update: finding updates and fixes for bnd workspaces
 
-`org.gecko.bnd.update` answers three questions for a bnd workspace:
+`org.gecko.bnd.update` answers three questions for a bnd workspace and does one thing:
 
 1. **Which of our libraries have newer versions?** — independent of any vulnerability report.
 2. **Which of our vulnerable libraries can be fixed, and with which version?** — for a Trivy
    report, using what the workspace's repositories actually offer.
 3. **Does every bndrun still resolve — and to what?** — the safety check after any update.
+4. **Apply** updates — all, a selection, or the fixes of a Trivy report — and prove the result:
+   every bndrun resolves, the new `-runbundles` are written, the build passes; what fails is
+   reverted.
 
-All three only read. They change no file; applying updates is a separate step (see
-[Roadmap](#roadmap)).
+1–3 only read. Only `apply` changes files.
 
 The same logic is available as a Java library, as a command line, and — planned — as Gradle and
 Maven plugins and CI adapters. Everything in this document applies to all of them.
@@ -78,6 +80,38 @@ For a `FAILED` bndrun the unresolved requirements are the reason, e.g.
 repositories exports `org.slf4j` in that range. After an update this is how a too narrow import
 range shows up. bnd's resolver reports it exactly, so no separate pre-check of import ranges is
 needed.
+
+### Function 4: apply
+
+`apply` changes the workspace. For each update it replaces the version in the `.mvn` index —
+**in place**, only the version field of that line, so the diff is one line per library; lines
+whose version is a macro (`biz.aQute.bnd:biz.aQute.bndlib:${bndversion}`) are left alone, the
+macro is the deliberate source of that version. Then it proves the result:
+
+1. every bndrun of the workspace is resolved again ([function 3](#function-3-resolve));
+2. if all resolve, the new `-runbundles` are written into the bndruns that change;
+3. if a build command is given, the workspace is built;
+4. if a bndrun does not resolve or the build fails, the update is **reverted**: the index and
+   every bndrun are restored byte for byte.
+
+Two modes:
+
+| Mode | How | Use when |
+|---|---|---|
+| `all` (default) | all updates together, checked once; if the check fails, all are reverted | the updates belong together, one PR/MR for all |
+| `each` | one after the other, each on top of the ones kept so far; a failing one is reverted and the next one tried | you want to know which update breaks what, or keep everything that works |
+
+What `apply` updates and what not:
+
+| Library | Changed by `apply` | Status in the report |
+|---|---|---|
+| in a text index (`.mvn`) with a version within the policy | yes | `APPLIED`, or `REVERTED` with the reason |
+| version is a macro in the index | no | `SKIPPED_MACRO` |
+| no version within the policy | no | `NOT_PROPOSED` (listed under "Outside the version policy") |
+| embedded in a workspace bundle (`-buildpath`), or in a pom index | no | `NOT_IN_INDEX` — update the `-buildpath` of the bundle by hand |
+
+Run `apply` on a branch or a working copy, never on a checkout with uncommitted work: it rewrites
+files. The Git diff afterwards is the update.
 
 ### Function 2: vulnerabilities
 
@@ -205,6 +239,29 @@ resolves unchanged, changed (with the bundles added and removed) or not at all (
 unresolved requirements). Run it after every update; see
 [After an update](#after-an-update-resolve-every-bndrun).
 
+### `apply`
+
+```
+apply [--only G:A,...] [--from-vulnerabilities TRIVY [--sbom SBOM]] [--mode all|each]
+      [--build-command CMD] [--workspace DIR] [--scope micro|minor|major] [--format text|json|markdown] [--output FILE]
+```
+
+**Changes the workspace.** Without `--only` and `--from-vulnerabilities` it applies every update
+`updates` proposes. Examples:
+
+```
+# all micro updates, together, checked with a Gradle build
+java -jar org.gecko.bnd.update.cli.jar apply --build-command "./gradlew build -x test"
+
+# only Jackson, minor allowed for this run
+java -jar org.gecko.bnd.update.cli.jar apply --only "com.fasterxml.jackson.core:*" --scope minor
+
+# the fixes of a Trivy report, one by one, keeping what works
+java -jar org.gecko.bnd.update.cli.jar apply --from-vulnerabilities trivy.json --sbom app.cdx.json --mode each
+```
+
+Then review `git diff` — the changed index lines and `-runbundles` — run the OSGi tests and commit.
+
 ### Options
 
 | Option | Meaning | Default |
@@ -216,6 +273,10 @@ unresolved requirements). Run it after every update; see
 | `--trivy FILE` | Trivy JSON report (`trivy sbom --format json`) | required for `vulnerabilities` |
 | `--sbom FILE` | the CycloneDX SBOM the Trivy report was made from; adds where each library sits | none |
 | `--against-updates` | consider only the versions function 1 finds, instead of everything the repositories offer | off |
+| `--only G:A,...` | `apply`: only these libraries; `groupId:artifactId` patterns, `*` matches any part | all proposed |
+| `--from-vulnerabilities FILE` | `apply`: apply the fixes `vulnerabilities` proposes for this Trivy report (with `--sbom` for locations) | — |
+| `--mode all\|each` | `apply`: together (all or nothing) or one by one (keep what passes) | `all` |
+| `--build-command CMD` | `apply`: build to run after resolving, in the workspace directory (`sh -c`, on Windows `cmd /c`); a failing build reverts the update | none |
 
 Workspace errors and warnings go to standard error; the report goes to standard output or the
 output file. bnd's own logging is set to warnings (override with
@@ -223,13 +284,13 @@ output file. bnd's own logging is set to warnings (override with
 
 ### Exit codes
 
-| Code | `updates` | `vulnerabilities` | `resolve` |
-|---|---|---|---|
-| 0 | nothing to update | nothing vulnerable | every bndrun resolves to its current `-runbundles` |
-| 1 | updates within the policy | every vulnerable library has a fix within the policy | every bndrun resolves, some to other `-runbundles` |
-| 2 | — | at least one library has no fix within the policy (`OUTSIDE_POLICY` or `NO_FIX`) | at least one bndrun does not resolve |
-| 64 | usage error | usage error | usage error |
-| 70 | internal error | internal error | internal error |
+| Code | `updates` | `vulnerabilities` | `resolve` | `apply` |
+|---|---|---|---|---|
+| 0 | nothing to update | nothing vulnerable | every bndrun resolves to its current `-runbundles` | nothing applied (nothing to do) |
+| 1 | updates within the policy | every vulnerable library has a fix within the policy | every bndrun resolves, some to other `-runbundles` | updates applied and verified — the working tree has changes to commit |
+| 2 | — | at least one library has no fix within the policy (`OUTSIDE_POLICY` or `NO_FIX`) | at least one bndrun does not resolve | at least one update was reverted (see the report) |
+| 64 | usage error | usage error | usage error | usage error |
+| 70 | internal error | internal error | internal error | internal error |
 
 A CI job can therefore fail on 2 (something needs a decision), report on 1 and pass on 0.
 
@@ -256,6 +317,10 @@ try (Workspace workspace = new Workspace(new File("/path/to/workspace"))) {
 		System.out.println(p.library() + " -> " + p.proposed());
 	}
 
+	// function 4: apply the proposed updates one by one, with a Gradle build
+	ApplyReport applied = new UpdateApplier(workspace.getBase(), BuildStep.command("./gradlew build -x test"))
+		.apply(updates, UpdateApplier.Mode.EACH);
+
 	// function 3: does every bndrun still resolve?
 	ResolveReport resolved = new ResolveCheck(workspace).resolveAll();
 	if (!resolved.allResolve()) {
@@ -279,6 +344,9 @@ try (Workspace workspace = new Workspace(new File("/path/to/workspace"))) {
 | `TrivyReport`, `Sbom` | the inputs |
 | `Update`, `Proposal`, `CheckReport`, `Location` | the results |
 | `ResolveCheck` | function 3: resolves all (or given) bndruns without writing |
+| `UpdateApplier`, `BuildStep` | function 4: applies updates (`ALL`/`EACH`), verifies, reverts; the build is any command |
+| `ApplyReport`, `AppliedUpdate` | its results per update |
+| `IndexEditor` | changes one library's version in a `.mvn` index in place |
 | `ResolveReport`, `BndrunResult` | its results: status, added/removed bundles, unresolved requirements |
 | `Reports` | JSON and Markdown renderings |
 
@@ -359,8 +427,8 @@ requirements that block it. Then write the new `-runbundles` with Gradle (bnd wo
 which resolves every bndrun of every project and updates the files. Then build and run the OSGi
 tests (`./gradlew build testOSGi`) and review the changed `-runbundles` in the diff.
 
-The planned `fix` step will do this itself: it proposes an update only when **all** bndruns still
-resolve, and lists the result per bndrun in the PR/MR.
+`apply` does this itself: it keeps an update only when **all** bndruns still resolve (and the
+build passes, with `--build-command`), and writes the new `-runbundles`.
 
 ## Limits
 
@@ -369,8 +437,10 @@ resolve, and lists the result per bndrun in the PR/MR.
   fix version unless the SBOM maps them to Maven coordinates (`maven.<bsn>` in `-sbom`).
 - **Fix recognition reads the fixed-version list**, not the advisory's exact ranges — see
   [Choosing the fix version](#choosing-the-fix-version).
-- **Resolving is not running.** `resolve` proves that the bndruns resolve; whether the
-  application behaves is for the build and the OSGi tests to show.
+- **Resolving is not running.** `resolve` and `apply` prove that the bndruns resolve; whether
+  the application behaves is for the build and the OSGi tests to show — run them before merging.
+- **`apply` changes only text indexes.** Pom indexes and `-buildpath` versions of embedded
+  libraries are reported, not changed.
 - **Network.** Every library costs a metadata request per repository that holds it; large
   workspaces with many repositories take a while.
 
@@ -378,7 +448,6 @@ resolve, and lists the result per bndrun in the PR/MR.
 
 Tracked in [#31](https://github.com/geckoprojects-org/org.gecko.bnd.sbom/issues/31):
 
-- `fix`: apply all or selected updates, resolve, build, report the result; GitHub Action that
-  opens PRs (#35); GitLab CI and Jenkins adapters (#38)
+- GitHub Action that runs `apply` and opens PRs (#35); GitLab CI and Jenkins adapters (#38)
 - Gradle plugin (#36), Maven plugin (#37)
 - optional: report the SBOM's dependencies to GitHub for Dependabot alerts (#32)
