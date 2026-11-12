@@ -46,8 +46,8 @@ public class MetadataTest {
 			.setApplicationVersion("1.2.0")
 			.setVcsUrl("https://github.com/example/app")
 			.setWebsiteUrl("https://example.org/app")
-			.addTool(new SbomTool("org.geckoprojects.bnd.sbom", "org.gecko.bnd.sbom", "0.1.0", "Data In Motion",
-				"pkg:maven/org.geckoprojects.bnd.sbom/org.gecko.bnd.sbom@0.1.0"))
+			.addTool(new SbomTool("org.geckoprojects.bnd", "org.gecko.bnd.sbom", "0.1.0", "Data In Motion",
+				"pkg:maven/org.geckoprojects.bnd/org.gecko.bnd.sbom@0.1.0"))
 			.addTool(Tools.bnd())
 			.addComponent(new SbomComponent().setBsn("c")
 				.setVersion("1.0.0"));
@@ -63,11 +63,11 @@ public class MetadataTest {
 		List<Map<String, Object>> tools = (List<Map<String, Object>>) ((Map<String, Object>) metadata.get("tools"))
 			.get("components");
 		assertThat(tools).hasSize(2);
-		assertThat(tools.get(0)).containsEntry("group", "org.geckoprojects.bnd.sbom")
+		assertThat(tools.get(0)).containsEntry("group", "org.geckoprojects.bnd")
 			.containsEntry("name", "org.gecko.bnd.sbom")
 			.containsEntry("version", "0.1.0")
 			.containsEntry("manufacturer", Map.of("name", "Data In Motion"))
-			.containsEntry("purl", "pkg:maven/org.geckoprojects.bnd.sbom/org.gecko.bnd.sbom@0.1.0");
+			.containsEntry("purl", "pkg:maven/org.geckoprojects.bnd/org.gecko.bnd.sbom@0.1.0");
 		assertThat(tools.get(1)).containsEntry("name", "bnd")
 			.containsEntry("version", About.CURRENT.toString());
 
