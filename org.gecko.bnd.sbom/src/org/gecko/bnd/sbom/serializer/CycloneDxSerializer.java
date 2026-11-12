@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.gecko.bnd.sbom.SbomConfig;
+import org.gecko.bnd.sbom.model.MavenCoordinates;
 import org.gecko.bnd.sbom.model.SbomComponent;
 import org.gecko.bnd.sbom.model.SbomLicense;
 import org.gecko.bnd.sbom.model.SbomModel;
@@ -40,6 +41,11 @@ public final class CycloneDxSerializer implements SbomSerializer {
 
 	private static final String		SPEC_VERSION	= "1.6";
 	private static final JSONCodec	CODEC			= new JSONCodec();
+
+	/** Bundle-SymbolicName of a component. */
+	public static final String		PROPERTY_BSN			= "osgi:bundle:symbolicName";
+	/** OSGi Bundle-Version of a component (the Maven version is the component's version). */
+	public static final String		PROPERTY_BUNDLE_VERSION	= "osgi:bundle:version";
 
 	@Override
 	public String fileExtension() {
@@ -97,8 +103,17 @@ public final class CycloneDxSerializer implements SbomSerializer {
 		Map<String, Object> node = new LinkedHashMap<>();
 		node.put("bom-ref", refs.of(component));
 		node.put("type", "library");
-		node.put("name", component.getBsn());
-		putIfPresent(node, "version", component.getVersion());
+		// Name and version agree with the PURL: Maven coordinates when verified, otherwise the
+		// OSGi identity (#14).
+		MavenCoordinates maven = component.getMaven();
+		if (maven != null) {
+			node.put("group", maven.groupId());
+			node.put("name", maven.artifactId());
+			node.put("version", maven.version());
+		} else {
+			node.put("name", component.getBsn());
+			putIfPresent(node, "version", component.getVersion());
+		}
 		putIfPresent(node, "purl", component.getPurl());
 
 		if (component.getSha512() != null) {
@@ -121,9 +136,20 @@ public final class CycloneDxSerializer implements SbomSerializer {
 		}
 		putIfPresent(node, "publisher", component.getSupplier());
 
+		List<Object> properties = new ArrayList<>();
+		// The OSGi identity is what the framework sees; it must not get lost behind the Maven one.
+		if (component.getBsn() != null) {
+			properties.add(property(PROPERTY_BSN, component.getBsn()));
+		}
+		if (component.getVersion() != null) {
+			properties.add(property(PROPERTY_BUNDLE_VERSION, component.getVersion()));
+		}
 		// Q3.b: flag an unresolvable identity honestly instead of inventing a PURL.
 		if (component.isUnverifiedIdentity()) {
-			node.put("properties", listOf(property("osgi:identity:matchability", "unverified")));
+			properties.add(property("osgi:identity:matchability", "unverified"));
+		}
+		if (!properties.isEmpty()) {
+			node.put("properties", properties);
 		}
 		// TODO(includeOSGIMetadata): Import-Package ranges / Require-Capability as namespaced
 		//   properties; package/class provenance format-natively via CycloneDX `pedigree`.

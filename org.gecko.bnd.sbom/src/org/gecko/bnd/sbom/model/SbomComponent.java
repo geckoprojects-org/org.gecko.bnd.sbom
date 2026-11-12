@@ -36,6 +36,8 @@ public final class SbomComponent {
 	private String		version;
 	/** Package URL, e.g. {@code pkg:maven/group/artifact@version}; {@code null} if unresolvable (Q3). */
 	private String		purl;
+	/** Verified Maven identity; {@code null} if unresolvable (Q3). bsn/version stay the OSGi identity. */
+	private MavenCoordinates	maven;
 	private String				sha512;
 	/** Licenses detected for this component (medium+); may be several (dual-licensing / multiple headers). */
 	private final List<SbomLicense>	licenses	= new ArrayList<>();
@@ -118,6 +120,15 @@ public final class SbomComponent {
 
 	public SbomComponent setCategory(Category category) {
 		this.category = category;
+		return this;
+	}
+
+	public MavenCoordinates getMaven() {
+		return maven;
+	}
+
+	public SbomComponent setMaven(MavenCoordinates maven) {
+		this.maven = maven;
 		return this;
 	}
 

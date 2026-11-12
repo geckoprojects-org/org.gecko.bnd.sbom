@@ -22,6 +22,7 @@ import java.util.Set;
 
 import aQute.bnd.build.Container;
 import aQute.bnd.build.Project;
+import org.gecko.bnd.sbom.model.MavenCoordinates;
 import org.gecko.bnd.sbom.model.SbomComponent;
 import org.gecko.bnd.sbom.model.SbomComponent.Category;
 import org.gecko.bnd.sbom.model.SbomLevel;
@@ -93,10 +94,12 @@ public final class SbomModelBuilder {
 			.setVersion(container.getVersion())
 			.setCategory(category);
 
-		// Q3: staged identity resolution → PURL; otherwise mark honestly as unverified.
-		String purl = purlResolver.resolve(container);
-		if (purl != null) {
-			component.setPurl(purl);
+		// Q3: staged identity resolution → Maven coordinates + PURL; otherwise mark honestly as
+		// unverified.
+		MavenCoordinates maven = purlResolver.resolve(container);
+		if (maven != null) {
+			component.setMaven(maven)
+				.setPurl(Purl.maven(maven));
 		} else {
 			component.setUnverifiedIdentity(true);
 		}

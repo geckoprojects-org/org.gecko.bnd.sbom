@@ -20,6 +20,7 @@ import java.util.Locale;
 import java.util.Map;
 
 import org.gecko.bnd.sbom.SbomConfig;
+import org.gecko.bnd.sbom.model.MavenCoordinates;
 import org.gecko.bnd.sbom.model.SbomComponent;
 import org.gecko.bnd.sbom.model.SbomLicense;
 import org.gecko.bnd.sbom.model.SbomModel;
@@ -108,9 +109,17 @@ public final class SpdxSerializer implements SbomSerializer {
 	private Map<String, Object> pkg(String spdxId, SbomComponent component, ExtractedLicenses extracted) {
 		Map<String, Object> pkg = new LinkedHashMap<>();
 		pkg.put("SPDXID", spdxId);
-		pkg.put("name", component.getBsn());
-		if (component.getVersion() != null) {
-			pkg.put("versionInfo", component.getVersion());
+		// Name and version agree with the PURL: Maven coordinates when verified, otherwise the
+		// OSGi identity (#14).
+		MavenCoordinates maven = component.getMaven();
+		if (maven != null) {
+			pkg.put("name", maven.artifactId());
+			pkg.put("versionInfo", maven.version());
+		} else {
+			pkg.put("name", component.getBsn());
+			if (component.getVersion() != null) {
+				pkg.put("versionInfo", component.getVersion());
+			}
 		}
 		pkg.put("downloadLocation", NOASSERTION);
 		pkg.put("filesAnalyzed", false);
@@ -132,9 +141,18 @@ public final class SpdxSerializer implements SbomSerializer {
 			ref.put("referenceLocator", component.getPurl());
 			pkg.put("externalRefs", listOf(ref));
 		}
-		// Q3.b: unresolvable identity is flagged, not given a fake purl.
+		// SPDX 2.3 has no free properties: the OSGi identity, which the framework sees, goes into
+		// the comment. Q3.b: an unresolvable identity is flagged, not given a fake purl.
+		List<String> comment = new ArrayList<>();
+		if (component.getBsn() != null) {
+			comment.add("OSGi bundle: " + component.getBsn()
+				+ (component.getVersion() != null ? " " + component.getVersion() : "") + ".");
+		}
 		if (component.isUnverifiedIdentity()) {
-			pkg.put("comment", "Identity unverified (reduced matchability): no reliable PURL.");
+			comment.add("Identity unverified (reduced matchability): no reliable PURL.");
+		}
+		if (!comment.isEmpty()) {
+			pkg.put("comment", String.join(" ", comment));
 		}
 		return pkg;
 	}
