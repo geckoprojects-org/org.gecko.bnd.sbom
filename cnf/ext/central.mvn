@@ -3,6 +3,8 @@ biz.aQute.bnd:aQute.libg:${bndversion}
 biz.aQute.bnd:biz.aQute.bndlib:${bndversion}
 biz.aQute.bnd:biz.aQute.bnd.util:${bndversion}
 biz.aQute.bnd:biz.aQute.bnd.annotation:${bndversion}
+biz.aQute.bnd:biz.aQute.repository:${bndversion}
+biz.aQute.bnd:biz.aQute.bnd.embedded-repo:${bndversion}
 
 # default -buildpath of the fennec library
 org.osgi:org.osgi.annotation.versioning:1.1.2
@@ -27,3 +29,6 @@ org.osgi:org.osgi.util.promise:1.3.0
 org.slf4j:slf4j-simple:2.0.17
 # slf4j 2 finds its backend through the ServiceLoader Mediator
 org.apache.aries.spifly:org.apache.aries.spifly.dynamic.framework.extension:1.3.7
+# bnd's repositories need them at runtime (bnd update CLI)
+org.osgi:org.osgi.service.coordinator:1.0.2
+org.osgi:org.osgi.service.log:1.5.0

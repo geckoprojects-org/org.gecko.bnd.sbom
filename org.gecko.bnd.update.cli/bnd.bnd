@@ -1,0 +1,40 @@
+Bundle-Name: Gecko bnd Update CLI
+Bundle-Description: Command line of the bnd update library (updates, vulnerabilities): an \
+	executable jar that carries bnd and runs without a bnd installation, for Jenkins, GitLab CI, \
+	GitHub Actions or a shell.
+
+Main-Class: org.gecko.bnd.update.cli.Main
+
+-buildpath: \
+	org.gecko.bnd.update;version=project,\
+	biz.aQute.bndlib;version=latest,\
+	biz.aQute.repository;version=latest,\
+	aQute.libg;version=latest
+
+# A self-contained executable: bnd and the update library are inlined, so the POM lists no
+# dependencies (maven-optional rule, docs/maven-scopes.md).
+-maven-dependencies:
+
+-includeresource: \
+	@${repo;org.gecko.bnd.update;snapshot}!/!META-INF/*,\
+	@${repo;biz.aQute.bnd.util;latest}!/!META-INF/*,\
+	@${repo;biz.aQute.bndlib;latest}!/!META-INF/*,\
+	@${repo;biz.aQute.repository;latest}!/!META-INF/*,\
+	@${repo;biz.aQute.bnd.embedded-repo;latest}!/!META-INF/*,\
+	@${repo;aQute.libg;latest}!/!META-INF/*,\
+	@${repo;osgi.core;latest}!/!META-INF/*,\
+	@${repo;org.osgi.service.repository;latest}!/!META-INF/*,\
+	@${repo;org.osgi.util.promise;latest}!/!META-INF/*,\
+	@${repo;org.osgi.util.function;latest}!/!META-INF/*,\
+	@${repo;org.osgi.service.coordinator;latest}!/!META-INF/*,\
+	@${repo;org.osgi.service.log;latest}!/!META-INF/*,\
+	@${repo;slf4j.api;latest}!/!META-INF/*,\
+	@${repo;slf4j.simple;latest}!/!META-INF/*,\
+	@${repo;slf4j.simple;latest}!/META-INF/services/*
+
+-testpath: \
+	assertj-core;version=latest
+
+# an application, not a bundle meant to be resolved in a framework
+Import-Package: *;resolution:=optional
+-exportcontents:

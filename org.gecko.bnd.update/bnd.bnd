@@ -1,0 +1,27 @@
+Bundle-Name: Gecko bnd Update
+Bundle-Description: Finds newer versions of the libraries in a bnd workspace's Maven \
+	repositories and matches them against vulnerability reports (Trivy), within a version \
+	policy. A plain Java library on top of bnd, usable standalone; CLI, build plugins and CI \
+	adapters wrap it.
+
+Export-Package: \
+	org.gecko.bnd.update;version=${base-version},\
+	org.gecko.bnd.update.maven;version=${base-version},\
+	org.gecko.bnd.update.report;version=${base-version}
+
+# bnd is the runtime: bndlib and the Maven repository support come with it
+-maven-scope: provided
+
+-buildpath: \
+	biz.aQute.bndlib;version=latest,\
+	biz.aQute.repository;version=latest,\
+	biz.aQute.bnd.util;version=latest,\
+	aQute.libg;version=latest,\
+	osgi.core;version=latest,\
+	org.osgi.service.repository;version=latest,\
+	slf4j.api;version=latest
+
+-testpath: \
+	assertj-core;version=latest,\
+	org.osgi.util.function;version=latest,\
+	org.osgi.util.promise;version=latest
