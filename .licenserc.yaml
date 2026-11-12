@@ -69,7 +69,7 @@ header:
     - '.licenserc.yaml'
     - '**/.project'
     - '**/*.prefs'
-    - 'build.gradle'
+    - '**/build.gradle'
     - 'gradle.properties'
     - 'gradlew'
     - 'gradlew.bat'

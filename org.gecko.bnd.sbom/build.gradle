@@ -1,0 +1,12 @@
+import aQute.bnd.gradle.Export
+
+// Dogfooding: the SBOM of runtime.bndrun, written by the exporter this project builds.
+// The CI hands the result to Trivy (.github/workflows/build.yml).
+tasks.register('sbom', Export) {
+    description = 'Writes the SBOM of runtime.bndrun with the exporter built in this project.'
+    group = 'export'
+    bndrun = file('runtime.bndrun')
+    exporter = 'bnd.sbom'
+    destinationDirectory = layout.buildDirectory.dir('sbom')
+    dependsOn tasks.named('jar')
+}
