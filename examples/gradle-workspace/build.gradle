@@ -34,6 +34,12 @@ tasks.register('sbomExporter', Sync) {
     tasks.named(name) { dependsOn 'sbomExporter' }
 }
 
+// bndVulnerabilities and bndApply read the SBOM (and Trivy's report of it, which Trivy writes in
+// between): in one Gradle invocation the export runs first
+['bndVulnerabilities', 'bndApply'].each { name ->
+    tasks.named(name) { mustRunAfter ':example.app:sbom' }
+}
+
 bndUpdate {
     // micro only by default; cnf/build.bnd can widen it per library with -update-policy
     scope = 'micro'
