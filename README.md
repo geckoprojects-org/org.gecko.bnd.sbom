@@ -116,10 +116,41 @@ license files, repository indexes. It is written to treat them as untrusted:
 - **CI:** CodeQL (`security-extended`) runs on every pull request and weekly; the Gradle wrapper
   and the Python packages of the schema check are verified by SHA-256.
 
-## Further documentation
+## Maven scopes in bnd-generated POMs
 
-- [Maven dependency scopes in bnd-generated POMs](docs/maven-scopes.md) — why scopes in a
-  bundle's POM change the SBOMs of everyone who consumes it, and the rules we apply.
+bnd writes a `pom.xml` into every released bundle and, by default, turns **every `-buildpath`
+entry into a `compile` dependency**. That POM is what Maven and Gradle consumers resolve — and
+what SBOM tools read: Trivy takes `compile` and `runtime` dependencies from a POM, also
+transitively from the published POMs of dependencies, and leaves out `provided`, `test` and
+optional ones. A bundle that lists annotation jars, framework APIs or libraries it carries
+inside as `compile` makes every consumer's SBOM larger than the software that runs, and their
+vulnerability scans report findings for artifacts that are not there.
+
+The SBOM written by this exporter is not affected (it comes from the resolved `-runbundles`),
+but everyone who consumes our bundles through Maven or Gradle is. So in bnd workspaces we
+apply three rules:
+
+| What is on the build path | Rule | Why |
+|---|---|---|
+| Annotations (`org.osgi.annotation.*`, DS/metatype annotations, `biz.aQute.bnd.annotation`) and specification APIs provided by the framework (`osgi.core`, `org.osgi.framework`) | `maven-scope=provided` | Annotations do not exist at runtime; framework APIs come from the framework. The consumer's runtime has them. |
+| Libraries inlined into the bundle (`-conditionalpackage`, `Private-Package`, `-includeresource @lib.jar!/...`) | `maven-optional=true` | They are part of the bundle, not a dependency; bnd leaves them out of the POM. This SBOM still lists them as embedded components. |
+| Libraries the bundle needs installed next to it at runtime (EMF, Jackson, ...) | `compile` (default) | Real dependencies; consumers must get them and their SBOMs must list them. |
+
+```
+-buildpath: \
+	org.osgi.annotation.versioning;maven-scope=provided,\
+	osgi.core;maven-scope=provided,\
+	org.osgi.util.promise;maven-optional=true,\
+	org.eclipse.emf.ecore
+
+-conditionalpackage: org.osgi.util.*
+```
+
+A project whose whole build path is provided by its runtime sets the default instead:
+`-maven-scope: provided` (this plugin does: bnd is its runtime). Shared entries belong in the
+workspace library, so one change fixes every project.
+
+Details, examples and how to check a generated POM: [docs/maven-scopes.md](docs/maven-scopes.md).
 
 ## Build
 
