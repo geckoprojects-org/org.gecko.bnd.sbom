@@ -452,7 +452,8 @@ For projects built with the bnd Maven plugins, see the runnable example
   The plugin therefore has no `apply` goal.
 
 The plugin is built with Maven in `maven-plugin/` (outside the bnd workspace) against the
-`org.gecko.bnd.update` library.
+`org.gecko.bnd.update` library. It is published with the bundles: see
+[Publishing the plugins](#publishing-the-plugins).
 
 ## Gradle
 
@@ -466,10 +467,32 @@ For bnd workspaces built with Gradle, the plugin `org.geckoprojects.bnd.update` 
 | `bndResolveCheck` | [resolve](#function-3-resolve), depends on every project's `jar` | no |
 | `bndApply` | [apply](#function-4-apply), depends on every project's `jar` | **yes** |
 
+The plugin is on Maven Central (not on the Gradle Plugin Portal), as the plugin marker
+`org.geckoprojects.bnd.update:org.geckoprojects.bnd.update.gradle.plugin` and the artifact
+`org.geckoprojects.bnd:bnd-update-gradle-plugin`. Snapshots are in the Central Portal's snapshot
+repository.
+
 ```groovy
-// settings.gradle: pluginManagement { repositories { gradlePluginPortal(); mavenCentral() } }
+// settings.gradle
+pluginManagement {
+    repositories {
+        mavenCentral()
+        // only for -SNAPSHOT versions
+        maven { url = 'https://central.sonatype.com/repository/maven-snapshots/' }
+        gradlePluginPortal()
+    }
+}
+```
+
+```groovy
+// build.gradle of the root project
 plugins {
-    id 'org.geckoprojects.bnd.update' version '0.1.0-SNAPSHOT'
+    id 'org.geckoprojects.bnd.update' version '0.1.0'
+}
+
+// where the bnd-update CLI comes from (by default the plugin's own version)
+repositories {
+    mavenCentral()
 }
 
 bndUpdate {
@@ -492,6 +515,31 @@ are never up to date: the answer depends on the repositories, not only on the in
 The tasks run the [CLI](#command-line) jar (`org.geckoprojects.bnd:org.gecko.bnd.update.cli`,
 configuration `bndUpdateCli`) in **its own JVM**: the bnd Gradle plugin already brings a bndlib
 into the build, and a second one of another version in the same classloader would conflict.
+
+## Publishing the plugins
+
+The Maven and Gradle plugins are built outside the bnd workspace, but Jenkins publishes them
+together with the bundles, with `ci/publish-plugins.sh` right after bnd's release:
+
+| Branch | Version | Targets |
+|---|---|---|
+| `snapshot` | `<base-version>-SNAPSHOT` | DIM Nexus `dim-snapshot`, Central Portal snapshot repository |
+| `main` | `<base-version>`, signed, with sources and javadoc | DIM Nexus `dim-release`, and `dist/bundles` — the same Central Portal deployment as the bundles |
+
+The version is the workspace's `base-version` (`cnf/ext/fennec.bnd`), so the plugins, the
+library and the CLI of one build carry the same version, and the Gradle plugin runs the CLI of
+its own version by default. The Maven plugin is built against the `org.gecko.bnd.update` jar of
+the same build; the script refuses to run when that jar has another version. The Maven plugin is
+built with its Maven wrapper (`maven-plugin/mvnw`, checksum-pinned), the Gradle plugin with the
+workspace's Gradle wrapper: the agent needs only Java 21.
+
+The targets can be redirected for a trial (`NEXUS_SNAPSHOT_URL`, `NEXUS_RELEASE_URL`,
+`CENTRAL_SNAPSHOT_URL`, `DIST_DIR`), e.g. to local directories:
+
+```
+./gradlew assemble
+NEXUS_SNAPSHOT_URL=file:///tmp/repo ci/publish-plugins.sh
+```
 
 ## GitHub Action
 
@@ -609,5 +657,4 @@ build passes, with `--build-command`), and writes the new `-runbundles`.
 
 Tracked in [#31](https://github.com/geckoprojects-org/org.gecko.bnd.sbom/issues/31):
 
-- publish the Maven and Gradle plugins from Jenkins (#47)
 - optional: report the SBOM's dependencies to GitHub for Dependabot alerts (#32)

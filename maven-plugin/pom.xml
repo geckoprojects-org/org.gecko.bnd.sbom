@@ -22,6 +22,30 @@
 			<url>https://www.eclipse.org/legal/epl-2.0/</url>
 		</license>
 	</licenses>
+	<organization>
+		<name>Data In Motion Consulting GmbH</name>
+	</organization>
+	<developers>
+		<developer>
+			<id>mhoffmann</id>
+			<name>Mark Hoffmann</name>
+			<email>m.hoffmann@datainmotion.com</email>
+			<organization>Data In Motion</organization>
+			<organizationUrl>https://www.datainmotion.com</organizationUrl>
+		</developer>
+		<developer>
+			<id>jalbert</id>
+			<name>Juergen Albert</name>
+			<email>j.albert@datainmotion.com</email>
+			<organization>Data In Motion</organization>
+			<organizationUrl>https://www.datainmotion.com</organizationUrl>
+		</developer>
+	</developers>
+	<scm>
+		<url>https://github.com/geckoprojects-org/org.gecko.bnd.sbom</url>
+		<connection>scm:git:https://github.com/geckoprojects-org/org.gecko.bnd.sbom.git</connection>
+		<developerConnection>scm:git:git@github.com:geckoprojects-org/org.gecko.bnd.sbom.git</developerConnection>
+	</scm>
 
 	<properties>
 		<maven.compiler.release>21</maven.compiler.release>
@@ -97,6 +121,75 @@
 				<artifactId>maven-surefire-plugin</artifactId>
 				<version>3.6.1</version>
 			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-deploy-plugin</artifactId>
+				<version>3.1.4</version>
+			</plugin>
 		</plugins>
 	</build>
+
+	<profiles>
+		<!--
+		  What Maven Central needs of a release: sources, javadoc, signatures. ci/publish-plugins.sh
+		  activates it for releases; gpg uses the agent's keyring (GNUPGHOME) and reads the
+		  passphrase from MAVEN_GPG_PASSPHRASE.
+		-->
+		<profile>
+			<id>release</id>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-source-plugin</artifactId>
+						<version>3.4.0</version>
+						<executions>
+							<execution>
+								<id>attach-sources</id>
+								<goals>
+									<goal>jar-no-fork</goal>
+								</goals>
+							</execution>
+						</executions>
+					</plugin>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-javadoc-plugin</artifactId>
+						<version>3.12.0</version>
+						<configuration>
+							<doclint>none</doclint>
+						</configuration>
+						<executions>
+							<execution>
+								<id>attach-javadocs</id>
+								<goals>
+									<goal>jar</goal>
+								</goals>
+							</execution>
+						</executions>
+					</plugin>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-gpg-plugin</artifactId>
+						<version>3.2.8</version>
+						<configuration>
+							<gpgArguments>
+								<arg>--pinentry-mode</arg>
+								<arg>loopback</arg>
+							</gpgArguments>
+						</configuration>
+						<executions>
+							<execution>
+								<id>sign-artifacts</id>
+								<phase>verify</phase>
+								<goals>
+									<goal>sign</goal>
+								</goals>
+							</execution>
+						</executions>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+	</profiles>
 </project>

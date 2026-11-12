@@ -8,7 +8,8 @@
 //                     and, signed, into dist/bundles, which bnd's sonatype-upload.sh hands to the
 //                     Sonatype Central Portal as one deployment
 //
-// The mechanics live in cnf/ext/release.bnd and the fennec library (releng/*.bnd).
+// The mechanics live in cnf/ext/release.bnd and the fennec library (releng/*.bnd); the build
+// plugins (maven-plugin/, gradle-plugin/) are published by ci/publish-plugins.sh to the same places.
 // DO_RELEASE decides the version the bundles are built with, so build and release share one
 // invocation.
 // One publish for both branches, set up the way the weather pipeline runs on this Jenkins:
@@ -73,6 +74,12 @@ def publish() {
         }
         sh 'rm -rf dist'
         sh './gradlew clean build release $COMMON_ARGS'
+        // The Maven and Gradle plugins are built outside the bnd workspace; they follow the
+        // bundles: same version, same Nexus, the Portal's snapshot repository or, for a release,
+        // signed into dist/bundles and thereby into the same Central deployment.
+        withEnv(["MAVEN_REPO_LOCAL=${env.WORKSPACE}/.m2"]) {
+            sh 'ci/publish-plugins.sh'
+        }
         if (release) {
             centralUpload()
         }

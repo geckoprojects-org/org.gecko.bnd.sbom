@@ -34,6 +34,7 @@ import org.gradle.api.tasks.OutputFile;
 import org.gradle.api.tasks.PathSensitive;
 import org.gradle.api.tasks.PathSensitivity;
 import org.gradle.api.tasks.TaskAction;
+import org.gradle.api.tasks.UntrackedTask;
 import org.gradle.process.ExecOperations;
 import org.gradle.process.ExecResult;
 
@@ -48,6 +49,7 @@ import javax.inject.Inject;
  * Exit codes 0 and 1 are results (nothing to do / something to act on), 2 a finding that needs a
  * decision — it fails the task only with {@code failOnFindings}; everything else fails it.
  */
+@UntrackedTask(because = "the result depends on the repositories, not only on the inputs")
 public abstract class BndUpdateTask extends DefaultTask {
 
 	@Inject
@@ -96,11 +98,6 @@ public abstract class BndUpdateTask extends DefaultTask {
 
 	@Input
 	public abstract Property<Boolean> getFailOnFindings();
-
-	public BndUpdateTask() {
-		// the result depends on the repositories, not only on the inputs
-		getOutputs().upToDateWhen(task -> false);
-	}
 
 	@TaskAction
 	public void run() {
