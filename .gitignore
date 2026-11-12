@@ -1,0 +1,10 @@
+.DS_Store
+/.gradle/
+generated/
+/.metadata/
+build/
+bin/
+bin_test/
+/cnf/cache
+# release artifacts collected for the Central Portal upload (cnf/ext/release.bnd)
+/dist/

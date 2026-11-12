@@ -1,0 +1,46 @@
+plugins {
+  id 'jacoco'
+  id 'java'
+}
+
+// We need to define a repository for the root project, otherwise Jacoco dependencies cannot be resolved
+repositories {
+  mavenCentral()
+}
+
+subprojects {
+
+    // JUnit test coverage is written to generated/jacoco/test.exec
+    apply plugin: 'jacoco'
+    apply plugin: 'java'
+    // We need to define a repository, otherwise Jacoco dependencies cannot be resolved
+    repositories {
+        mavenCentral()
+    }
+
+    test {
+        useJUnitPlatform()
+    }
+
+    // JUnit dependencies for modules that have plain Gradle tests
+    dependencies {
+        testImplementation 'org.junit.jupiter:junit-jupiter:5.14.2'
+        testImplementation 'org.junit.platform:junit-platform-launcher:1.14.2'
+        testImplementation 'org.assertj:assertj-core:3.27.7'
+    }
+}
+
+task codeCoverageReport(type: JacocoReport) {
+    dependsOn(test)
+    executionData fileTree(project.rootDir.absolutePath).include("**/**/*.exec")
+
+    subprojects.each {
+        sourceSets it.sourceSets.main
+    }
+
+    reports {
+        xml.required = true
+        html.required = true
+        csv.required = false
+    }
+}

@@ -1,0 +1,15 @@
+pluginManagement {
+  plugins {
+    id 'biz.aQute.bnd.workspace' version bnd_version
+  }
+  repositories {
+    mavenCentral()
+    gradlePluginPortal()
+  }
+}
+plugins {
+  id 'biz.aQute.bnd.workspace'
+}
+
+// Project name comes from gradle.properties (single source of truth)
+rootProject.name = github_repository

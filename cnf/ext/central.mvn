@@ -1,0 +1,19 @@
+# bnd itself: the exporter is a bnd plugin and compiles against bndlib
+biz.aQute.bnd:aQute.libg:${bndversion}
+biz.aQute.bnd:biz.aQute.bndlib:${bndversion}
+biz.aQute.bnd:biz.aQute.bnd.util:${bndversion}
+biz.aQute.bnd:biz.aQute.bnd.annotation:${bndversion}
+
+# default -buildpath of the fennec library
+org.osgi:org.osgi.annotation.versioning:1.1.2
+org.osgi:org.osgi.annotation.bundle:2.0.0
+org.osgi:org.osgi.service.component.annotations:1.5.1
+org.osgi:org.osgi.service.metatype.annotations:1.4.1
+org.osgi:osgi.core:8.0.0
+org.slf4j:slf4j-api:2.0.17
+
+# test
+org.assertj:assertj-core:3.27.7
+
+# workspace library
+org.eclipse.fennec.bnd:org.eclipse.fennec.bnd.library:0.0.9

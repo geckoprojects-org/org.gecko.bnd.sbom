@@ -1,0 +1,83 @@
+header:
+  license:
+    spdx-id: EPL-2.0
+    copyright-owner: Contributors to the Eclipse Foundation
+    content: |
+      Copyright (c) 2026 Contributors to the Eclipse Foundation.
+
+      This program and the accompanying materials are made
+      available under the terms of the Eclipse Public License 2.0
+      which is available at https://www.eclipse.org/legal/epl-2.0/
+
+      SPDX-License-Identifier: EPL-2.0
+
+    pattern: |
+      This program and the accompanying materials are made
+      available under the terms of the Eclipse Public License 2.0
+      which is available at https://www.eclipse.org/legal/epl-2.0/
+      SPDX-License-Identifier: EPL-2.0
+  paths-ignore:
+    - 'dist'
+    - 'licenses'
+    - '**/package-info.java'
+    - '**/packageinfo'
+    - '**/module-info.java'
+    - '**/*.sh'
+    - '**/*.bnd'
+    - '**/*.bndrun'
+    - '**/*.xml'
+    - '**/*.csv'
+    - '**/*.json'
+    - '**/*.ecore'
+    - '**/*.xcore'
+    - '**/*.genmodel'
+    - '**/*.md'
+    - '**/*.MD'
+    - '**/.keep'
+    - '**/.gitkeep'
+    - '**/*.jetproperties'
+    - '**/*.javajet'
+    - '**/*.javajetinc'
+    - '**/*.properties'
+    - '**/*.maven'
+    - '**/*.mvn'
+    - '**/*.MF'
+    - '**/*.html'
+    - '**/*.drawio*'
+    - '**/*.ftl'
+    - '**/*.aird'
+    - '**/*.basic'
+    - '**/*.txt'
+    - '**/*.eorm'
+    - '**/*.sql'
+    - '**/*.xmi'
+    - '**/*.db'
+    - '**/.classpath'
+    - 'LICENSE'
+    - 'Jenkinsfile'
+    - 'NOTICE'
+    - 'cnf/**'
+    - '**/src-gen/**'
+    # recorded source files (DWD KMZ, station catalogue) for offline tests carry the source's terms, not ours
+    - '**/test/fixtures/**'
+    - '**/generated/**'
+    - '.gitattributes'
+    - '.github/**'
+    - '.gitignore'
+    - 'cnf/release/**.*'
+    - '.gradle-wrapper/gradle-wrapper.properties'
+    - '.licenserc.yaml'
+    - '**/.project'
+    - '**/*.prefs'
+    - 'build.gradle'
+    - 'gradle.properties'
+    - 'gradlew'
+    - 'gradlew.bat'
+    - 'settings.gradle'
+    - 'old/**'
+    - 'docs-site/**'
+    # the demo UI follows xdp-ui's conventions (short SPDX headers, copied xdp stylesheets, vendored tarballs)
+    - 'ui/**'
+    - '**/*.dragino'
+
+  comment: always

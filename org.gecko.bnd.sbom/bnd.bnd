@@ -1,0 +1,22 @@
+Bundle-Name: Gecko bnd SBOM Exporter
+Bundle-Description: bnd exporter plugin (export type 'bnd.sbom') that writes a Software Bill of \
+	Materials of the resolved OSGi application of a .bndrun - the resolved -runbundles plus the \
+	framework layer - as CycloneDX or SPDX.
+
+# A bnd plugin, not an OSGi application bundle: bnd loads it through '-plugin' with bnd itself
+# as the parent class loader, so the aQute.* packages come from bnd and are not embedded.
+Export-Package: \
+	org.gecko.bnd.sbom;bnd-plugins=true;version=${base-version},\
+	org.gecko.bnd.sbom.model;version=${base-version},\
+	org.gecko.bnd.sbom.serializer;version=${base-version}
+
+-buildpath: \
+	biz.aQute.bndlib;version=latest,\
+	biz.aQute.bnd.util;version=latest,\
+	biz.aQute.bnd.annotation;version=latest,\
+	aQute.libg;version=latest,\
+	osgi.core;version=latest,\
+	slf4j.api;version=latest
+
+-testpath: \
+	assertj-core;version=latest

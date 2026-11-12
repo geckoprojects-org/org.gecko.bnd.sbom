@@ -1,0 +1,34 @@
+# Workspace setup — additive bnd properties, modelled on the org.gecko.weather workspace.
+
+# Single source of truth for the project coordinates: gradle.properties at the
+# workspace root (also read natively by Gradle). bnd imports it so the same values
+# drive both Gradle and bnd.
+-include: ${workspace}/gradle.properties
+
+# The Fennec base library (resolved from Maven Central via central.mvn) brings the
+# bundle headers, -pom / -maven-release and the snapshot/release version handling.
+-library: \
+	fennec
+
+base-version: 0.1.0
+javac.source: 21
+javac.target: 21
+-require-bnd: "(version>=7.4.0)"
+
+# Maven Central (read-only).
+-plugin.5.Central: \
+	aQute.bnd.repository.maven.provider.MavenBndRepository; \
+		snapshotUrl="https://central.sonatype.com/repository/maven-snapshots/"; \
+		releaseUrl=https://repo.maven.apache.org/maven2/; \
+		index=${.}/central.mvn; \
+		readOnly=true; \
+		poll.time=-1; \
+		name="Central"
+
+# Project coordinates, imported from gradle.properties (single source).
+github-orga:    ${github_org}
+github-project: ${github_repository}
+-groupid:       ${maven_group_id}
+
+# The fennec library names the Eclipse Foundation; this is a Geckoprojects workspace.
+Bundle-Vendor: Data In Motion Consulting GmbH
