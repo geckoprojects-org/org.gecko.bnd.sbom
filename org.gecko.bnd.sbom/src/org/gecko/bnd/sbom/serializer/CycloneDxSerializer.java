@@ -240,6 +240,11 @@ public final class CycloneDxSerializer implements SbomSerializer {
 		if (component.getVersion() != null) {
 			properties.add(property(PROPERTY_BUNDLE_VERSION, component.getVersion()));
 		}
+		// where in the runtime: installed bundle or framework class path
+		if (component.getLayer() != null) {
+			properties.add(property("osgi:layer", component.getLayer()
+				.id()));
+		}
 		// Q3.b: flag an unresolvable identity honestly instead of inventing a PURL.
 		if (component.isUnverifiedIdentity()) {
 			properties.add(property("osgi:identity:matchability", "unverified"));

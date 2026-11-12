@@ -31,6 +31,7 @@ import aQute.bnd.osgi.Jar;
 import org.gecko.bnd.sbom.model.MavenCoordinates;
 import org.gecko.bnd.sbom.model.SbomComponent;
 import org.gecko.bnd.sbom.model.SbomComponent.Category;
+import org.gecko.bnd.sbom.model.SbomLayer;
 import org.gecko.bnd.sbom.model.SbomLevel;
 import org.gecko.bnd.sbom.model.SbomLicense;
 import org.gecko.bnd.sbom.model.SbomModel;
@@ -84,13 +85,15 @@ public final class SbomModelBuilder {
 			.forEach(model::addProperty);
 
 		// View 2, A2.1: the resolved application bundles.
-		add(model, runbundles, null);
+		add(model, runbundles, null, SbomLayer.RUNBUNDLE);
 
-		// View 2, A2.2 (scope for now: -runfw + -runpath only): the framework infrastructure
-		// the bundles run on. Both accessors return fully resolved Containers with maven-*
-		// attributes, so the same PURL/license resolution applies.
-		add(model, project.getRunFw(), Category.FRAMEWORK);
-		add(model, project.getRunpath(), Category.FRAMEWORK);
+		// View 2, A2.2: the framework infrastructure the bundles run on. -runfw and -runpath are
+		// what ends up on the framework's class path; -runsystempackages/-runsystemcapabilities
+		// only declare exports from there (or from the JDK) and bring no artifact of their own.
+		// Both accessors return fully resolved Containers with maven-* attributes, so the same
+		// PURL/license resolution applies.
+		add(model, project.getRunFw(), Category.FRAMEWORK, SbomLayer.RUNFW);
+		add(model, project.getRunpath(), Category.FRAMEWORK, SbomLayer.RUNPATH);
 
 		// #13: who depends on whom, from the manifests of the resolved set
 		DependencyGraph graph = new DependencyGraph(manifests);
@@ -110,23 +113,24 @@ public final class SbomModelBuilder {
 			}
 		}
 
-		// A2.5/Q4: system packages, boot delegation and DynamicImport-Package are out of the
-		// current scope and are declared as gaps rather than silently omitted.
+		// A2.5/Q4: what this SBOM cannot see is declared, not silently omitted.
 		model.setDependenciesComplete(false);
-		model.addKnownUnknown(
-			"Framework scope limited to -runfw/-runpath; system packages, boot delegation and DynamicImport-Package not resolved");
+		model.addKnownUnknown("The Java runtime is not part of this SBOM; packages the bundles take from it "
+			+ "(system packages, boot delegation) have no component and no dependency edge");
+		model.addKnownUnknown("DynamicImport-Package is not resolved");
 
 		return model;
 	}
 
-	private void add(SbomModel model, Collection<Container> containers, Category category) throws Exception {
+	private void add(SbomModel model, Collection<Container> containers, Category category, SbomLayer layer)
+		throws Exception {
 		if (containers == null) {
 			return;
 		}
 		for (Container container : containers) {
 			String key = container.getBundleSymbolicName() + "|" + container.getVersion();
 			if (seen.add(key)) {
-				SbomComponent component = toComponent(container, category);
+				SbomComponent component = toComponent(container, category).setLayer(layer);
 				model.addComponent(component);
 				manifests.put(component, container.getManifest());
 			}
