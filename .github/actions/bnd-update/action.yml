@@ -124,8 +124,9 @@ runs:
         [ -n "$TRIVY" ] && args+=(--from-vulnerabilities "$TRIVY")
         [ -n "$SBOM" ] && args+=(--sbom "$SBOM")
         [ -n "$BUILD" ] && args+=(--build-command "$BUILD")
-        java -jar "$JAR" "${args[@]}"
-        code=$?
+        # the runner's bash runs with -e: catch the exit code instead of stopping here
+        code=0
+        java -jar "$JAR" "${args[@]}" || code=$?
         echo "exit-code=$code" >> "$GITHUB_OUTPUT"
         echo "report=$report" >> "$GITHUB_OUTPUT"
         [ -f "$report" ] && cat "$report" >> "$GITHUB_STEP_SUMMARY"
