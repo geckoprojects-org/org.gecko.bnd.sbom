@@ -64,7 +64,11 @@ jobs:
   check:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    # The published jar is the last snapshot: it cannot know options a pull request adds, so its
+    # run tests the download (checksum included) and is informational only.
+    continue-on-error: ${{ matrix.cli == 'published' }}
     strategy:
+      fail-fast: false
       matrix:
         cli: [built, published]
     steps:
