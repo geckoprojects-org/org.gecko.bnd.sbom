@@ -49,9 +49,10 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
 
-      # This repository builds the tool, so it uses the jar of this commit.
-      - name: Build bnd update
-        run: ./gradlew :org.gecko.bnd.update.cli:jar --no-daemon --stacktrace
+      # The workspace's own bundles must exist before bndruns can resolve; this also builds the
+      # tool, so the jar of this commit is used.
+      - name: Build the workspace
+        run: ./gradlew assemble --no-daemon --stacktrace
 
       - name: Apply updates
         uses: ./.github/actions/bnd-update
@@ -84,9 +85,9 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
 
-      - name: Build bnd update
-        if: matrix.cli == 'built'
-        run: ./gradlew :org.gecko.bnd.update.cli:jar --no-daemon --stacktrace
+      # The workspace's own bundles must exist before bndruns can resolve (and the built jar).
+      - name: Build the workspace
+        run: ./gradlew assemble --no-daemon --stacktrace
 
       - name: Apply updates (no pull request)
         id: bnd-update

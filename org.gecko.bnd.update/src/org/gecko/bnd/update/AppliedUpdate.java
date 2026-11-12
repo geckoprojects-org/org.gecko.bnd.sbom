@@ -32,6 +32,8 @@ public record AppliedUpdate(Update update, Status status, String reason) {
 		/** not applied: the library is not in a {@code .mvn} index (embedded, or pom index) */
 		NOT_IN_INDEX,
 		/** not applied: the policy allows no update for it */
-		NOT_PROPOSED
+		NOT_PROPOSED,
+		/** not applied: the workspace does not resolve even without updates */
+		NOT_APPLIED
 	}
 }

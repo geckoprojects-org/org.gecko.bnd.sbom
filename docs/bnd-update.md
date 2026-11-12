@@ -108,10 +108,17 @@ What `apply` updates and what not:
 | in a text index (`.mvn`) with a version within the policy | yes | `APPLIED`, or `REVERTED` with the reason |
 | version is a macro in the index | no | `SKIPPED_MACRO` |
 | no version within the policy | no | `NOT_PROPOSED` (listed under "Outside the version policy") |
+| any, when the workspace does not resolve before the first update | no | `NOT_APPLIED` |
 | embedded in a workspace bundle (`-buildpath`), or in a pom index | no | `NOT_IN_INDEX` — update the `-buildpath` of the bundle by hand |
 
 Run `apply` on a branch or a working copy, never on a checkout with uncommitted work: it rewrites
 files. The Git diff afterwards is the update.
+
+**Build the workspace first.** A bndrun that runs bundles of the workspace itself can only resolve
+when they are built (`./gradlew assemble`). `apply` therefore resolves every bndrun *before* the
+first update: if that fails, it applies nothing and reports the failing bndruns
+("the workspace does not resolve even without updates", status `NOT_APPLIED`, exit 2) — instead
+of blaming updates for a failure they did not cause. `resolve` has the same requirement.
 
 ### Function 2: vulnerabilities
 
@@ -288,7 +295,7 @@ output file. bnd's own logging is set to warnings (override with
 |---|---|---|---|---|
 | 0 | nothing to update | nothing vulnerable | every bndrun resolves to its current `-runbundles` | nothing applied (nothing to do) |
 | 1 | updates within the policy | every vulnerable library has a fix within the policy | every bndrun resolves, some to other `-runbundles` | updates applied and verified — the working tree has changes to commit |
-| 2 | — | at least one library has no fix within the policy (`OUTSIDE_POLICY` or `NO_FIX`) | at least one bndrun does not resolve | at least one update was reverted (see the report) |
+| 2 | — | at least one library has no fix within the policy (`OUTSIDE_POLICY` or `NO_FIX`) | at least one bndrun does not resolve | at least one update was reverted, or the workspace does not resolve without updates (see the report) |
 | 64 | usage error | usage error | usage error | usage error |
 | 70 | internal error | internal error | internal error | internal error |
 
@@ -420,6 +427,7 @@ jobs:
       - uses: actions/checkout@<sha>
       - uses: actions/setup-java@<sha>
         with: { distribution: temurin, java-version: '21' }
+      - run: ./gradlew assemble          # the workspace's bundles, needed to resolve
       - uses: geckoprojects-org/org.gecko.bnd.sbom/.github/actions/bnd-update@<sha>
         with:
           mode: each
@@ -458,6 +466,8 @@ Outputs: `exit-code` (of `apply`), `report` (path of the Markdown report), `pull
 Things to know:
 
 - **Java 21** must be on the runner (`actions/setup-java`), plus whatever the build command needs.
+- **Build the workspace before the action** (`./gradlew assemble`): bndruns that run the
+  workspace's own bundles only resolve when those are built.
 - The repository must allow GitHub Actions to create pull requests (*Settings → Actions →
   General → Workflow permissions*).
 - **No CI on the pull request with the default token.** GitHub does not start workflows for

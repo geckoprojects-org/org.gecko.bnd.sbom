@@ -22,9 +22,10 @@ import java.util.List;
  * @param updates what happened to each update
  * @param resolve the final resolution of all bndruns (after the kept updates)
  * @param build the final build, {@code null} if none ran
+ * @param baseline the resolution before any update; when it fails, nothing was applied
  */
 public record ApplyReport(UpdateApplier.Mode mode, List<AppliedUpdate> updates, ResolveReport resolve,
-	BuildStep.Result build) {
+	BuildStep.Result build, ResolveReport baseline) {
 
 	public ApplyReport {
 		updates = List.copyOf(updates);
@@ -39,6 +40,15 @@ public record ApplyReport(UpdateApplier.Mode mode, List<AppliedUpdate> updates, 
 	/** {@code true} if at least one update was applied and kept. */
 	public boolean anyApplied() {
 		return !withStatus(AppliedUpdate.Status.APPLIED).isEmpty();
+	}
+
+	/**
+	 * {@code true} if the workspace did not resolve before any update — then no update was
+	 * tried: a failure could not be told apart from one the updates cause. Typically the
+	 * workspace's own bundles are not built.
+	 */
+	public boolean baselineFails() {
+		return baseline != null && !baseline.allResolve();
 	}
 
 	/** {@code true} if an update had to be reverted. */

@@ -257,6 +257,11 @@ public final class Main {
 		} else {
 			Files.writeString(new File(output).toPath(), content, StandardCharsets.UTF_8);
 		}
+		if (report.baselineFails()) {
+			err.println("No update applied: the workspace does not resolve even without updates;"
+				+ " build its bundles first (e.g. ./gradlew assemble)");
+			return NOT_FIXABLE;
+		}
 		if (report.anyReverted()) {
 			return NOT_FIXABLE;
 		}
