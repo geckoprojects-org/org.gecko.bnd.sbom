@@ -214,6 +214,10 @@ public final class SpdxSerializer implements SbomSerializer {
 			comment.add("OSGi bundle: " + component.getBsn()
 				+ (component.getVersion() != null ? " " + component.getVersion() : "") + ".");
 		}
+		if (component.getLayer() != null) {
+			comment.add("Layer: " + component.getLayer()
+				.id() + ".");
+		}
 		if (component.isUnverifiedIdentity()) {
 			comment.add("Identity unverified (reduced matchability): no reliable PURL.");
 		}

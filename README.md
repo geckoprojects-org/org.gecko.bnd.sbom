@@ -89,6 +89,11 @@ A complete example:
   `-conditionalpackage`, `Private-Package` or `-includeresource @...`. They are listed as
   components of their own with their original Maven coordinates, so scanners match CVEs
   against them; `osgi:embedded:in` names the bundle.
+- **Layer:** `osgi:layer` says where a component sits — `runbundle` (installed, can be
+  updated in the framework), `runfw` or `runpath` (on the framework's class path, replaced only
+  by rebuilding the launch). `-runsystempackages` and `-runsystemcapabilities` add no
+  components: they only declare exports from `-runfw`, `-runpath` or the JDK; the JDK itself
+  is not part of the SBOM.
 - **Origin:** for every bundle the repository it was taken from (`osgi:repository:name`,
   `osgi:repository:kind`: `maven`, `p2`, `osgi`, `file`, `workspace`) and, where the
   repository knows it, the download URL as `distribution` reference.

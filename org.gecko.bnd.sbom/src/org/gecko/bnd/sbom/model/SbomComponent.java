@@ -62,6 +62,8 @@ public final class SbomComponent {
 	private final List<SbomComponent>	embedded	= new ArrayList<>();
 	/** #8: for an embedded library, where in the bundle it was found */
 	private String		embeddedPath;
+	/** runbundle, runfw or runpath; {@code null} for an embedded library (see its bundle) */
+	private SbomLayer	layer;
 
 	public String getBsn() {
 		return bsn;
@@ -195,6 +197,15 @@ public final class SbomComponent {
 
 	public SbomComponent addEmbedded(SbomComponent component) {
 		embedded.add(component);
+		return this;
+	}
+
+	public SbomLayer getLayer() {
+		return layer;
+	}
+
+	public SbomComponent setLayer(SbomLayer layer) {
+		this.layer = layer;
 		return this;
 	}
 
