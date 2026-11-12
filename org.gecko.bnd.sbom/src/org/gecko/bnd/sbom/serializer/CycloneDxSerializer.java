@@ -58,8 +58,10 @@ public final class CycloneDxSerializer implements SbomSerializer {
 		Map<String, Object> bom = new LinkedHashMap<>();
 		bom.put("bomFormat", "CycloneDX");
 		bom.put("specVersion", SPEC_VERSION);
-		bom.put("version", 1);
 		SbomRefs refs = SbomRefs.of(model);
+		// #12: identity of this BOM; together with version it tells a new BOM from a revision
+		bom.put("serialNumber", SerialNumbers.urn(SerialNumbers.of(model, refs, config)));
+		bom.put("version", 1);
 		bom.put("metadata", metadata(model, config, refs));
 
 		List<Object> components = new ArrayList<>();

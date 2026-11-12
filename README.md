@@ -32,6 +32,8 @@ The SBOM is written to the project's `generated/` folder as `<name>.bndrun.cdx.j
 | `level` | `simple` (name, version, PURL), `medium` (adds hashes and licenses), `full` | `simple` |
 | `format` | `cyclonedx`, `spdx` | `cyclonedx` |
 | `includeOSGIMetadata` | `true`, `false` | `false` |
+| `timestamp` | ISO-8601 instant, e.g. `2026-01-01T00:00:00Z`, for reproducible builds | time of the export |
+| `serialNumber` | `content` (derived from format, level, application and components: an unchanged application keeps its serial number), `random` | `content` |
 
 ### Configuration in the `.bndrun`
 

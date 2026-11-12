@@ -150,4 +150,22 @@ public class SbomConfigTest {
 
 		assertThat(cdx.lastModified()).isBetween(before, System.currentTimeMillis());
 	}
+
+	@Test
+	public void serialNumberOption() {
+		Processor reporter = new Processor();
+
+		assertThat(SbomConfig.from(reporter, "", Map.of())
+			.randomSerialNumber()).isFalse();
+		assertThat(SbomConfig.from(reporter, "serialNumber=random", Map.of())
+			.randomSerialNumber()).isTrue();
+		assertThat(SbomConfig.from(reporter, "serialNumber=content", Map.of())
+			.randomSerialNumber()).isFalse();
+		assertThat(reporter.isOk()).isTrue();
+
+		SbomConfig.from(reporter, "serialNumber=sometimes", Map.of());
+		assertThat(reporter.getErrors()).singleElement()
+			.asString()
+			.contains("content, random");
+	}
 }

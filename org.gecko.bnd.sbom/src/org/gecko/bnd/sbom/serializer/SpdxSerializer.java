@@ -74,7 +74,9 @@ public final class SpdxSerializer implements SbomSerializer {
 		doc.put("dataLicense", "CC0-1.0");
 		doc.put("SPDXID", DOCUMENT_ID);
 		doc.put("name", appName);
-		doc.put("documentNamespace", NAMESPACE_BASE + sanitize(appName) + "-" + sanitize(created));
+		// #12: the same rule as CycloneDX's serialNumber — derived from the content, not the time
+		doc.put("documentNamespace",
+			NAMESPACE_BASE + sanitize(appName) + "-" + SerialNumbers.of(model, refs, config));
 		doc.put("creationInfo", creationInfo(created, model));
 		if (!extracted.infos.isEmpty()) {
 			doc.put("hasExtractedLicensingInfos", extracted.infos);
