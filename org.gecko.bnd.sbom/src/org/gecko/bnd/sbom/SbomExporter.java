@@ -57,7 +57,14 @@ public class SbomExporter implements Exporter {
 		project.prepare();
 
 		// Configuration: trigger options take precedence, then the -sbom instruction.
+		int errorsBefore = project.getErrors()
+			.size();
 		SbomConfig config = SbomConfig.from(project, options);
+		if (project.getErrors()
+			.size() > errorsBefore) {
+			// invalid configuration (reported on the project): no SBOM rather than one with defaults
+			return null;
+		}
 
 		// View 2, A2.1: resolved -runbundles set with exact versions.
 		Collection<Container> runbundles = project.getRunbundles();

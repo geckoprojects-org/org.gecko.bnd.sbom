@@ -36,7 +36,8 @@ The SBOM is written to the project's `generated/` folder as `<name>.bndrun.cdx.j
 ### Configuration in the `.bndrun`
 
 The options can be set declaratively in the `.bndrun` with the `-sbom` instruction. The
-entries are separated by **commas** (a semicolon is a syntax error):
+entries are separated by commas; semicolons are accepted as well. Invalid values (e.g. `level=mediun`)
+are reported as errors and no SBOM is written; unknown options are reported as warnings.
 
 ```
 -sbom: level=medium, format=spdx

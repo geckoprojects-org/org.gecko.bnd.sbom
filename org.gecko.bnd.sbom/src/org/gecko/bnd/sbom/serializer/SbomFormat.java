@@ -13,6 +13,8 @@
  */
 package org.gecko.bnd.sbom.serializer;
 
+import java.util.Optional;
+
 /**
  * Output format, orthogonal to the {@link org.gecko.bnd.sbom.model.SbomLevel levels}
  * (requirements Q1). CycloneDX is the first serializer; SPDX follows (medium/BSI).
@@ -32,14 +34,15 @@ public enum SbomFormat {
 		return id;
 	}
 
-	public static SbomFormat parse(String value) {
+	/** The constant with the given id (case-insensitive), or empty for an unknown id. */
+	public static Optional<SbomFormat> find(String value) {
 		if (value != null) {
-			for (SbomFormat format : values()) {
-				if (format.id.equalsIgnoreCase(value.trim())) {
-					return format;
+			for (SbomFormat candidate : values()) {
+				if (candidate.id.equalsIgnoreCase(value.trim())) {
+					return Optional.of(candidate);
 				}
 			}
 		}
-		return CYCLONEDX;
+		return Optional.empty();
 	}
 }

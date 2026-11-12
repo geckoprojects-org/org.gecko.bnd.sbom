@@ -13,7 +13,6 @@
  */
 package org.gecko.bnd.sbom.serializer;
 
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -54,9 +53,8 @@ public final class SpdxSerializer implements SbomSerializer {
 
 	@Override
 	public Resource serialize(SbomModel model, SbomConfig config) throws Exception {
-		String created = config.timestamp() != null ? config.timestamp()
-			: Instant.now()
-				.toString();
+		String created = config.created()
+			.toString();
 		String appName = model.getApplicationName() != null ? model.getApplicationName() : "application";
 
 		ExtractedLicenses extracted = new ExtractedLicenses();
@@ -86,7 +84,8 @@ public final class SpdxSerializer implements SbomSerializer {
 			.indent("  ")
 			.put(doc)
 			.toString();
-		return new EmbeddedResource(json, 0L);
+		return new EmbeddedResource(json, config.created()
+			.toEpochMilli());
 	}
 
 	private Map<String, Object> creationInfo(String created, SbomModel model) {

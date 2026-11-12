@@ -13,7 +13,6 @@
  */
 package org.gecko.bnd.sbom.serializer;
 
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -68,12 +67,13 @@ public final class CycloneDxSerializer implements SbomSerializer {
 			.put(bom)
 			.toString();
 
-		return new EmbeddedResource(json, 0L);
+		return new EmbeddedResource(json, config.created()
+			.toEpochMilli());
 	}
 
 	private Map<String, Object> metadata(SbomModel model, SbomConfig config) {
 		Map<String, Object> metadata = new LinkedHashMap<>();
-		metadata.put("timestamp", config.timestamp() != null ? config.timestamp() : Instant.now()
+		metadata.put("timestamp", config.created()
 			.toString());
 
 		Map<String, Object> tool = new LinkedHashMap<>();
