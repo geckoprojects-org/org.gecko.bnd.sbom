@@ -116,6 +116,36 @@ license files, repository indexes. It is written to treat them as untrusted:
 - **CI:** CodeQL (`security-extended`) runs on every pull request and weekly; the Gradle wrapper
   and the Python packages of the schema check are verified by SHA-256.
 
+## bnd update: newer versions and vulnerability fixes
+
+`org.gecko.bnd.update` (library) and `org.gecko.bnd.update.cli` (executable jar) answer two
+questions for a bnd workspace — reading only, they change no file:
+
+| Command | Question | Proposal |
+|---|---|---|
+| `updates` | Which libraries in the `.mvn` indexes have newer versions? | the highest version the version policy allows |
+| `vulnerabilities --trivy FILE [--sbom FILE]` | Which vulnerable libraries (Trivy report) can be fixed with what the repositories offer? | the smallest allowed version that fixes all of the library's vulnerabilities |
+
+```
+java -jar org.gecko.bnd.update.cli.jar updates --format markdown
+java -jar org.gecko.bnd.update.cli.jar vulnerabilities --trivy trivy.json --sbom app.bndrun.cdx.json
+```
+
+**Version policy:** only `micro` updates (same major.minor) by default; `minor` or `major` only
+where configured, per library if needed; variants such as guava `-jre`/`-android` are kept.
+
+```
+-update-policy: default;scope=micro, com.fasterxml.jackson.core:*;scope=minor
+```
+
+**After any update** of a `.mvn` index or a `-buildpath` version — by tool, Bndtools or hand —
+**resolve every bndrun** (`./gradlew resolve`) before committing: narrow import ranges can make a
+bndrun unresolvable, and an update can change what other bndruns resolve to.
+
+Exit codes (0 nothing to do, 1 fixes within the policy, 2 something needs a decision), the
+fix-version rules, library API, CI examples for Jenkins, GitLab and GitHub, limits:
+[docs/bnd-update.md](docs/bnd-update.md).
+
 ## Maven scopes in bnd-generated POMs
 
 bnd writes a `pom.xml` into every released bundle and, by default, turns **every `-buildpath`
