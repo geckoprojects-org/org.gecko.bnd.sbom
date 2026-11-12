@@ -22,6 +22,8 @@ Maven plugins and CI adapters. Everything in this document applies to all of the
 - [Command line](#command-line)
 - [Using it as a library](#using-it-as-a-library)
 - [In CI](#in-ci)
+- [CI adapter (Jenkins, GitLab CI)](#ci-adapter-jenkins-gitlab-ci)
+- [GitHub Action](#github-action)
 - [After an update: resolve every bndrun](#after-an-update-resolve-every-bndrun)
 - [Limits](#limits)
 - [Roadmap](#roadmap)
@@ -362,7 +364,7 @@ try (Workspace workspace = new Workspace(new File("/path/to/workspace"))) {
 The command line is the same everywhere; only how it is called differs. A typical job: export the
 SBOMs, scan them with Trivy, run the check, publish the report.
 
-**Jenkins**
+**Jenkins** — the report only, the CLI directly:
 
 ```groovy
 stage('Vulnerability fixes') {
@@ -379,6 +381,9 @@ stage('Vulnerability fixes') {
     }
 }
 ```
+
+To apply the updates and open a pull/merge request from Jenkins, use the
+[CI adapter](#ci-adapter-jenkins-gitlab-ci).
 
 **GitLab CI**
 
@@ -408,6 +413,19 @@ vulnerability-fixes:
 or the [GitHub Action](#github-action), which also opens the pull request. Ready-made GitLab CI
 and Jenkins adapters that open merge requests are planned (#38); until then the CLI in a job, as
 above, plus the forge's API.
+
+## CI adapter (Jenkins, GitLab CI)
+
+`ci/bnd-update.sh` does for any CI what the [GitHub Action](#github-action) does on GitHub: fetch
+the CLI, run `apply`, commit the verified updates (signed off) on a branch, push it and open or
+update one pull request (GitHub, via `GITHUB_TOKEN` + `GITHUB_REPOSITORY`) or merge request
+(GitLab, via `GITLAB_TOKEN` + the `CI_*` variables). Without a token it commits locally only;
+with `DRY_RUN=true` it shows what it would push and request. It needs bash, git, curl and Java 21,
+no jq or Python.
+
+For Jenkins: [ci/jenkins/README.md](../ci/jenkins/README.md) and the pipeline
+`ci/jenkins/Jenkinsfile.example` (weekly cron on the main branch, credentials, pinned script). A
+GitLab CI template follows (#38).
 
 ## GitHub Action
 

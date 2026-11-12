@@ -1,0 +1,65 @@
+// bnd update on Jenkins: weekly on the main branch (and on demand), applies the updates the
+// version policy allows, verifies them (every bndrun resolves, the build passes) and opens or
+// updates one pull request. See ci/jenkins/README.md and docs/bnd-update.md.
+//
+// Merge the stage into the repository's Jenkinsfile; adjust the credential id, the repository
+// and the branch.
+
+pipeline {
+    agent any
+
+    tools {
+        jdk 'OpenJDK21'
+    }
+
+    triggers {
+        // weekly, only for the branch the updates go into
+        cron(env.BRANCH_NAME == 'main' ? 'H 5 * * 2' : '')
+    }
+
+    options {
+        disableConcurrentBuilds()
+    }
+
+    stages {
+        stage('bnd update') {
+            when {
+                allOf {
+                    branch 'main'
+                    anyOf {
+                        triggeredBy 'TimerTrigger'
+                        triggeredBy cause: 'UserIdCause'
+                    }
+                }
+            }
+            environment {
+                // pinned: the commit of org.gecko.bnd.sbom whose ci/bnd-update.sh is used, and
+                // the script's SHA-256 (sha256sum ci/bnd-update.sh at that commit)
+                BND_UPDATE_COMMIT = '<commit>'
+                BND_UPDATE_SHA256 = '<sha256>'
+            }
+            steps {
+                // the workspace's own bundles must exist for its bndruns to resolve
+                sh './gradlew assemble --no-daemon'
+                sh '''
+                    curl -fsSL -o bnd-update.sh \
+                      "https://raw.githubusercontent.com/geckoprojects-org/org.gecko.bnd.sbom/$BND_UPDATE_COMMIT/ci/bnd-update.sh"
+                    echo "$BND_UPDATE_SHA256  bnd-update.sh" | sha256sum -c --strict -
+                '''
+                withCredentials([string(credentialsId: 'github-bnd-update-token', variable: 'GITHUB_TOKEN')]) {
+                    sh '''
+                        GITHUB_REPOSITORY=geckoprojects-org/my-repository \
+                        BUILD_COMMAND="./gradlew build -x test --no-daemon" \
+                        GIT_NAME="bnd update" GIT_EMAIL="bnd-update@example.org" \
+                        bash bnd-update.sh
+                    '''
+                }
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'bnd-update-report.md', allowEmptyArchive: true
+                }
+            }
+        }
+    }
+}

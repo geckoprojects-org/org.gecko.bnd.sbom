@@ -55,6 +55,7 @@ header:
     - '**/.classpath'
     - 'LICENSE'
     - 'Jenkinsfile'
+    - '**/Jenkinsfile*'
     - 'NOTICE'
     - 'cnf/**'
     - '**/src-gen/**'
