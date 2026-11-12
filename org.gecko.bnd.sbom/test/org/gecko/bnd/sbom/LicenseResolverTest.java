@@ -15,6 +15,9 @@ package org.gecko.bnd.sbom;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.jar.Attributes;
 import java.util.jar.Manifest;
@@ -62,6 +65,85 @@ public class LicenseResolverTest {
 			.get(0);
 		assertThat(license.spdxId()).isNull();
 		assertThat(license.name()).isEqualTo("My Custom License");
+	}
+
+	@Test
+	public void eclipseLicenseNameIsMappedToSpdxId() {
+		assertThat(resolver.fromManifest(manifest("Eclipse Public License 2.0"))
+			.get(0)
+			.spdxId()).isEqualTo("EPL-2.0");
+	}
+
+	@Test
+	public void expressionFromBundleLicense() {
+		// as in bnd's own manifests
+		SbomLicense license = resolver.fromManifest(manifest(
+			"(Apache-2.0 OR EPL-2.0);description=\"Apache License, Version 2.0, or the Eclipse Public License 2.0.\";"
+				+ "link=\"https://opensource.org/licenses/Apache-2.0,https://opensource.org/licenses/EPL-2.0\""))
+			.get(0);
+		assertThat(license.isExpression()).isTrue();
+		assertThat(license.expression()).isEqualTo("(Apache-2.0 OR EPL-2.0)");
+	}
+
+	@Test
+	public void licensesFromPom() {
+		String pom = """
+			<project xmlns="http://maven.apache.org/POM/4.0.0">
+			  <licenses>
+			    <license>
+			      <name>EPL-2.0</name>
+			      <url>https://www.eclipse.org/legal/epl-2.0/</url>
+			    </license>
+			    <license>
+			      <name>Vendor License</name>
+			      <url>https://example.com/license</url>
+			    </license>
+			  </licenses>
+			  <build><plugins><plugin><configuration>
+			    <license><name>MIT</name></license>
+			  </configuration></plugin></plugins></build>
+			</project>
+			""";
+		List<SbomLicense> licenses = resolver.fromPom(stream(pom));
+
+		assertThat(licenses).hasSize(2);
+		assertThat(licenses.get(0)
+			.spdxId()).isEqualTo("EPL-2.0");
+		assertThat(licenses.get(1)
+			.name()).isEqualTo("Vendor License");
+	}
+
+	@Test
+	public void pomLicenseNameUnknownButUrlKnown() {
+		String pom = """
+			<project>
+			  <licenses><license>
+			    <name>EPL v2</name>
+			    <url>https://www.eclipse.org/legal/epl-v20.html</url>
+			  </license></licenses>
+			</project>
+			""";
+		assertThat(resolver.fromPom(stream(pom))
+			.get(0)
+			.spdxId()).isEqualTo("EPL-2.0");
+	}
+
+	@Test
+	public void pomWithDoctypeIsRejected() {
+		String pom = """
+			<?xml version="1.0"?>
+			<!DOCTYPE project [<!ENTITY x SYSTEM "file:///etc/passwd">]>
+			<project><licenses><license><name>&x;</name></license></licenses></project>
+			""";
+		assertThat(resolver.fromPom(stream(pom))).isEmpty();
+	}
+
+	@Test
+	public void eclipseAboutTextIsRecognized() {
+		assertThat(resolver.fromLicenseText(
+			"the Content is provided to you under the terms and conditions of the Eclipse Public License Version 2.0 (\"EPL\")")
+			.get(0)
+			.spdxId()).isEqualTo("EPL-2.0");
 	}
 
 	@Test
@@ -116,5 +198,9 @@ public class LicenseResolverTest {
 			main.putValue("Bundle-License", bundleLicense);
 		}
 		return manifest;
+	}
+
+	private static InputStream stream(String text) {
+		return new ByteArrayInputStream(text.getBytes(StandardCharsets.UTF_8));
 	}
 }

@@ -170,7 +170,14 @@ public final class SpdxSerializer implements SbomSerializer {
 		}
 		List<String> parts = new ArrayList<>();
 		for (SbomLicense license : component.getLicenses()) {
-			parts.add(license.isSpdx() ? license.spdxId() : extracted.refFor(license.name()));
+			parts.add(license.isSpdx() || license.isExpression() ? license.asOperand() : extracted.refFor(license.name()));
+		}
+		if (parts.size() == 1 && component.getLicenses()
+			.get(0)
+			.isExpression()) {
+			return component.getLicenses()
+				.get(0)
+				.expression();
 		}
 		return String.join(" AND ", parts);
 	}

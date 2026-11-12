@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import org.gecko.bnd.sbom.SbomConfig;
 import org.gecko.bnd.sbom.model.MavenCoordinates;
@@ -122,16 +123,8 @@ public final class CycloneDxSerializer implements SbomSerializer {
 			hash.put("content", component.getSha512());
 			node.put("hashes", listOf(hash));
 		}
-		// CycloneDX distinguishes a validated SPDX id (license.id) from free text (license.name);
-		// a component may carry several license entries.
-		if (!component.getLicenses()
-			.isEmpty()) {
-			List<Object> licenses = new ArrayList<>();
-			for (SbomLicense license : component.getLicenses()) {
-				Map<String, Object> value = license.isSpdx() ? singletonMap("id", license.spdxId())
-					: singletonMap("name", license.name());
-				licenses.add(singletonMap("license", value));
-			}
+		List<Object> licenses = licenses(component.getLicenses());
+		if (!licenses.isEmpty()) {
 			node.put("licenses", licenses);
 		}
 		putIfPresent(node, "publisher", component.getSupplier());
@@ -154,6 +147,36 @@ public final class CycloneDxSerializer implements SbomSerializer {
 		// TODO(includeOSGIMetadata): Import-Package ranges / Require-Capability as namespaced
 		//   properties; package/class provenance format-natively via CycloneDX `pedigree`.
 		return node;
+	}
+
+	/**
+	 * CycloneDX distinguishes a validated SPDX id ({@code license.id}) from free text
+	 * ({@code license.name}); an SPDX expression is a single {@code expression} entry, which may
+	 * not be mixed with license entries. Several ids and expressions therefore become one
+	 * expression joined with AND; only together with free text, which an expression cannot hold,
+	 * does an expression fall back to {@code license.name}.
+	 */
+	private static List<Object> licenses(List<SbomLicense> licenses) {
+		List<Object> result = new ArrayList<>();
+		boolean anyExpression = licenses.stream()
+			.anyMatch(SbomLicense::isExpression);
+		boolean anyName = licenses.stream()
+			.anyMatch(l -> !l.isSpdx() && !l.isExpression());
+		if (anyExpression && !anyName) {
+			String expression = licenses.size() == 1 ? licenses.get(0)
+				.expression()
+				: licenses.stream()
+					.map(SbomLicense::asOperand)
+					.collect(Collectors.joining(" AND "));
+			result.add(singletonMap("expression", expression));
+			return result;
+		}
+		for (SbomLicense license : licenses) {
+			Map<String, Object> value = license.isSpdx() ? singletonMap("id", license.spdxId())
+				: singletonMap("name", license.isExpression() ? license.expression() : license.name());
+			result.add(singletonMap("license", value));
+		}
+		return result;
 	}
 
 	private List<Object> compositions(SbomModel model, SbomRefs refs) {
