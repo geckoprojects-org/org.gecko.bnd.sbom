@@ -1,0 +1,95 @@
+# SBOM of the exporter's own runtime, written by the exporter itself, and its Trivy scan.
+#
+# Separate from build.yml: it needs 'security-events: write' for the code-scanning upload, which
+# the build does not, and it runs on a schedule as well — new vulnerabilities are published for
+# components that did not change, so an unchanged SBOM has to be scanned again.
+name: SBOM and Trivy
+
+on:
+  push:
+    branches:
+      - snapshot
+      - main
+  pull_request:
+  schedule:
+    # daily, 04:17 UTC
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sbom-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sbom:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Java 21
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+
+      # Dogfooding: the SBOM of org.gecko.bnd.sbom/runtime.bndrun, written by the exporter that
+      # this task builds first (task 'sbom' in org.gecko.bnd.sbom/build.gradle).
+      - name: SBOM of the exporter's own runtime
+        run: ./gradlew :org.gecko.bnd.sbom:sbom --no-daemon --stacktrace
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom
+          path: org.gecko.bnd.sbom/generated/sbom/runtime.bndrun.cdx.json
+          retention-days: 30
+
+      # Trivy reads the SBOM and matches its components against its vulnerability database.
+      # Reporting only for now: findings do not fail the build (exit-code 0).
+      - name: Trivy scan of the SBOM (SARIF)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: sbom
+          scan-ref: org.gecko.bnd.sbom/generated/sbom/runtime.bndrun.cdx.json
+          format: sarif
+          output: trivy-results.sarif
+          exit-code: '0'
+
+      # The same findings as a table in the run's summary page.
+      - name: Trivy scan of the SBOM (summary)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: sbom
+          scan-ref: org.gecko.bnd.sbom/generated/sbom/runtime.bndrun.cdx.json
+          format: table
+          output: trivy-results.txt
+          exit-code: '0'
+          skip-setup-trivy: true
+
+      - name: Trivy summary
+        run: |
+          {
+            echo '## Trivy: SBOM of runtime.bndrun'
+            echo '```'
+            cat trivy-results.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Into the repository's Security tab (code scanning). Not for pull requests and Dependabot
+      # runs: their token is read-only and the upload would be refused.
+      - name: Upload Trivy report to code scanning
+        if: github.event_name != 'pull_request' && github.actor != 'dependabot[bot]'
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy-sbom
