@@ -33,8 +33,43 @@ The SBOM is written to the project's `generated/` folder as `<name>.bndrun.cdx.j
 | `format` | `cyclonedx`, `spdx` | `cyclonedx` |
 | `includeOSGIMetadata` | `true`, `false` | `false` |
 
-The same options can be set declaratively with the `-sbom` instruction in the `.bndrun`;
-options passed on the command line take precedence.
+### Configuration in the `.bndrun`
+
+The options can be set declaratively in the `.bndrun` with the `-sbom` instruction. The
+entries are separated by **commas** (a semicolon is a syntax error):
+
+```
+-sbom: level=medium, format=spdx
+```
+
+`-sbom` only configures the exporter, it does not trigger it. The export still has to be
+requested, and options passed there take precedence over `-sbom`:
+
+```
+bnd export --exporter bnd.sbom app.bndrun
+bnd export --exporter "bnd.sbom;format=cyclonedx" app.bndrun
+```
+
+To make the SBOM the default export of the `.bndrun`, so that a plain `bnd export app.bndrun`
+writes it, name the exporter in `-exporttype`. Here the options are attributes of the export
+type and are separated by **semicolons**:
+
+```
+-exporttype: bnd.sbom;level=medium;format=spdx
+```
+
+A complete example:
+
+```
+-runfw: org.apache.felix.framework;version='[7.0.5,7.0.5]'
+-runee: JavaSE-21
+-runrequires: bnd.identity;id='my.application'
+-runbundles: \
+	my.application;version=snapshot,\
+	org.apache.felix.scr;version='[2.2.6,2.2.7)'
+
+-sbom: level=medium, format=cyclonedx
+```
 
 ## Build
 
