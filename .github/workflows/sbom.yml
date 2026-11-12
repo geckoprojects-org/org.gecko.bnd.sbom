@@ -62,12 +62,15 @@ jobs:
           CYCLONEDX_SPEC: https://raw.githubusercontent.com/CycloneDX/specification/6470e34ef83f915868ece48934cff52e10c9eb49/schema
           SPDX_SPEC: https://raw.githubusercontent.com/spdx/spdx-spec/6f2cb47d13db19b12c23885573b22ef32ec1ada5/schemas
         run: |
-          python -m pip install --quiet jsonschema==4.26.0
+          # exactly the pinned files (hashes in .github/python/requirements.txt), wheels only
+          python -m pip install --quiet --only-binary :all: --require-hashes -r .github/python/requirements.txt
           mkdir -p "$RUNNER_TEMP/schemas"
           for f in bom-1.6.schema.json bom-1.7.schema.json spdx.schema.json jsf-0.82.schema.json cryptography-defs.schema.json; do
             curl -fsSL -o "$RUNNER_TEMP/schemas/$f" "$CYCLONEDX_SPEC/$f"
           done
           curl -fsSL -o "$RUNNER_TEMP/schemas/spdx-2.3.schema.json" "$SPDX_SPEC/spdx-schema.json"
+          # the schemas as they were when pinned, not whatever the URL serves today
+          (cd "$RUNNER_TEMP/schemas" && grep -v '^#' "$GITHUB_WORKSPACE/.github/schemas.sha256" | sha256sum -c --strict -)
           python -I .github/scripts/validate-sbom.py "$RUNNER_TEMP/schemas" $(find org.gecko.bnd.sbom/generated/sbom -name '*.json')
 
       - name: Upload SBOM

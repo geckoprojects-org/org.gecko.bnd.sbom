@@ -13,6 +13,7 @@
  */
 package org.gecko.bnd.sbom;
 
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -23,7 +24,9 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.jar.Manifest;
+import java.util.regex.Pattern;
 
+import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilderFactory;
 
 import org.gecko.bnd.sbom.model.SbomLicense;
@@ -66,6 +69,7 @@ public final class LicenseResolver {
 	private static final String		LINK			= "link";
 	private static final PathSet	EMBEDDED_POM	= new PathSet("META-INF/maven/*/*/pom.xml");
 	private static final String		ABOUT			= "about.html";
+	private static final Pattern	LETTER			= Pattern.compile("\\p{L}");
 
 	public List<SbomLicense> resolve(Container container) throws Exception {
 		List<SbomLicense> fromManifest = fromManifest(container.getManifest());
@@ -128,7 +132,7 @@ public final class LicenseResolver {
 			return Collections.emptyList();
 		}
 		File pom = new File(jar.getParentFile(), name.substring(0, name.length() - 4) + ".pom");
-		if (!pom.isFile()) {
+		if (!pom.isFile() || pom.length() > Limits.METADATA) {
 			return Collections.emptyList();
 		}
 		try (InputStream in = IO.stream(pom)) {
@@ -152,6 +156,11 @@ public final class LicenseResolver {
 	public List<SbomLicense> fromPom(InputStream pom) {
 		Document document;
 		try {
+			// CWE-400: a POM is small; a huge one is not parsed at all
+			byte[] bytes = Limits.read(pom, Limits.METADATA);
+			if (bytes == null) {
+				return Collections.emptyList();
+			}
 			DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
 			factory.setNamespaceAware(true);
 			// a POM from a repository is untrusted input: no DTDs, no external entities
@@ -160,8 +169,12 @@ public final class LicenseResolver {
 			factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
 			factory.setXIncludeAware(false);
 			factory.setExpandEntityReferences(false);
+			// defence in depth (CWE-611/776): entity limits and no external access at all
+			factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+			factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+			factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
 			document = factory.newDocumentBuilder()
-				.parse(pom);
+				.parse(new ByteArrayInputStream(bytes));
 		} catch (Exception e) {
 			return Collections.emptyList();
 		}
@@ -203,7 +216,8 @@ public final class LicenseResolver {
 			return Collections.emptyList();
 		}
 		try (InputStream in = about.openInputStream()) {
-			String text = IO.collect(in)
+			// CWE-400: only the head of the file; the license statement is at its top
+			String text = Limits.head(in, Limits.LICENSE_TEXT)
 				.replaceAll("<[^>]*>", " ");
 			String spdx = sniff(text);
 			return spdx != null ? Collections.singletonList(SbomLicense.spdx(spdx)) : Collections.emptyList();
@@ -251,7 +265,7 @@ public final class LicenseResolver {
 			return Collections.emptyList();
 		}
 		try (InputStream in = resource.openInputStream()) {
-			return fromLicenseText(IO.collect(in));
+			return fromLicenseText(Limits.head(in, Limits.LICENSE_TEXT));
 		}
 	}
 
@@ -323,7 +337,9 @@ public final class LicenseResolver {
 			if (lower.startsWith("copyright") || lower.startsWith("(c)") || lower.startsWith("©")) {
 				continue;
 			}
-			if (!line.matches(".*\\p{L}.*")) {
+			// find(), not matches(".*\\p{L}.*"): no backtracking over long lines (CWE-1333)
+			if (!LETTER.matcher(line)
+				.find()) {
 				continue;
 			}
 			return line.length() > 120 ? line.substring(0, 120) : line;

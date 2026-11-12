@@ -13,6 +13,7 @@
  */
 package org.gecko.bnd.sbom;
 
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.InputStream;
 import java.util.Map;
@@ -92,7 +93,12 @@ public final class PurlResolver {
 			Properties props = new Properties();
 			try (InputStream in = pom.get()
 				.openInputStream()) {
-				props.load(in);
+				// CWE-400: pom.properties is a few lines; a huge one is ignored
+				byte[] bytes = Limits.read(in, Limits.METADATA);
+				if (bytes == null) {
+					return null;
+				}
+				props.load(new ByteArrayInputStream(bytes));
 			}
 			// pom.properties has no classifier/extension; a plain jar coordinate is fine.
 			return MavenCoordinates.of(props.getProperty("groupId"), props.getProperty("artifactId"),
