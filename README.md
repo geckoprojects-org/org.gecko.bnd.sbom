@@ -119,13 +119,14 @@ license files, repository indexes. It is written to treat them as untrusted:
 ## bnd update: newer versions and vulnerability fixes
 
 `org.gecko.bnd.update` (library) and `org.gecko.bnd.update.cli` (executable jar) answer three
-questions for a bnd workspace — reading only, they change no file:
+questions for a bnd workspace and apply updates — only `apply` changes files:
 
 | Command | Question | Proposal |
 |---|---|---|
 | `updates` | Which libraries in the `.mvn` indexes have newer versions? | the highest version the version policy allows |
 | `vulnerabilities --trivy FILE [--sbom FILE]` | Which vulnerable libraries (Trivy report) can be fixed with what the repositories offer? | the smallest allowed version that fixes all of the library's vulnerabilities |
 | `resolve` | Does every bndrun still resolve — and to what? | per bndrun: unchanged, changed (bundles added/removed) or the unresolved requirements |
+| `apply` | **changes the workspace:** applies updates (all, `--only` some, or `--from-vulnerabilities`) | the `.mvn` lines changed in place, every bndrun resolved, new `-runbundles` written, `--build-command` run; what fails is reverted (`--mode all` all or nothing, `each` one by one) |
 
 ```
 java -jar org.gecko.bnd.update.cli.jar updates --format markdown

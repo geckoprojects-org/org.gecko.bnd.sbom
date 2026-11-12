@@ -16,9 +16,12 @@ package org.gecko.bnd.update.report;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import org.gecko.bnd.update.AppliedUpdate;
+import org.gecko.bnd.update.ApplyReport;
 import org.gecko.bnd.update.BndrunResult;
 import org.gecko.bnd.update.CheckReport;
 import org.gecko.bnd.update.Location;
@@ -200,6 +203,123 @@ public final class Reports {
 					.distinct()
 					.collect(Collectors.joining("<br>")))
 				.append(" |\n");
+		}
+		return md.toString();
+	}
+
+	// ---- apply
+
+	public static String json(ApplyReport report) throws Exception {
+		List<Object> list = new ArrayList<>();
+		for (AppliedUpdate a : report.updates()) {
+			Map<String, Object> node = new LinkedHashMap<>();
+			node.put("library", a.update()
+				.library()
+				.ga());
+			node.put("from", a.update()
+				.library()
+				.version());
+			node.put("to", string(a.update()
+				.proposed()));
+			node.put("index", a.update()
+				.index());
+			node.put("status", a.status()
+				.name());
+			node.put("reason", a.reason());
+			list.add(node);
+		}
+		Map<String, Object> root = new LinkedHashMap<>();
+		root.put("mode", report.mode()
+			.name());
+		root.put("updates", list);
+		root.put("allResolve", report.resolve()
+			.allResolve());
+		root.put("build", report.build() == null ? null : report.build()
+			.ok());
+		return encode(root);
+	}
+
+	public static String markdown(ApplyReport report) {
+		StringBuilder md = new StringBuilder("## Applied updates\n\n");
+		List<AppliedUpdate> applied = report.withStatus(AppliedUpdate.Status.APPLIED);
+		if (applied.isEmpty()) {
+			md.append("No update applied.\n");
+		} else {
+			md.append("| Library | From | To | Index |\n|---|---|---|---|\n");
+			for (AppliedUpdate a : applied) {
+				md.append("| `")
+					.append(a.update()
+						.library()
+						.ga())
+					.append("` | ")
+					.append(a.update()
+						.library()
+						.version())
+					.append(" | **")
+					.append(a.update()
+						.proposed())
+					.append("** | ")
+					.append(a.update()
+						.index())
+					.append(" |\n");
+			}
+			md.append("\nEvery bndrun resolves")
+				.append(report.build() != null ? " and the build passed" : "")
+				.append(" with these updates (mode ")
+				.append(report.mode()
+					.name()
+					.toLowerCase(Locale.ROOT))
+				.append(").\n");
+		}
+		List<AppliedUpdate> other = report.updates()
+			.stream()
+			.filter(a -> a.status() != AppliedUpdate.Status.APPLIED && a.status() != AppliedUpdate.Status.NOT_PROPOSED)
+			.toList();
+		List<AppliedUpdate> outside = report.withStatus(AppliedUpdate.Status.NOT_PROPOSED);
+		if (!outside.isEmpty()) {
+			md.append("\n### Outside the version policy\n\n");
+			for (AppliedUpdate a : outside) {
+				md.append("- `")
+					.append(a.update()
+						.library())
+					.append("` → ")
+					.append(a.update()
+						.latest())
+					.append(" needs a ")
+					.append(a.update()
+						.latestScope()
+						.id())
+					.append(" update (allowed: ")
+					.append(a.update()
+						.allowed()
+						.id())
+					.append(")\n");
+			}
+		}
+		if (!other.isEmpty()) {
+			md.append("\n### Not applied\n\n");
+			for (AppliedUpdate a : other) {
+				md.append("- `")
+					.append(a.update()
+						.library())
+					.append("` → ")
+					.append(a.update()
+						.proposed())
+					.append(": **")
+					.append(a.status()
+						.name()
+						.toLowerCase(Locale.ROOT)
+						.replace('_', ' '))
+					.append("**")
+					.append(a.reason() != null ? " — " + a.reason()
+						.replace("\n", "<br>") : "")
+					.append("\n");
+			}
+		}
+		List<BndrunResult> changed = report.resolve()
+			.withStatus(BndrunResult.Status.CHANGED);
+		if (!changed.isEmpty()) {
+			md.append("\n").append(markdown(report.resolve()));
 		}
 		return md.toString();
 	}
