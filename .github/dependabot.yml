@@ -28,3 +28,12 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: "build(deps)"
+
+  # The bnd-update Maven plugin (examples/maven-sbom pins its versions on purpose and is left out).
+  - package-ecosystem: "maven"
+    directory: "/maven-plugin"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "build(deps)"

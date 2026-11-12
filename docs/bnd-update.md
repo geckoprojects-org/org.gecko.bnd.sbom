@@ -23,6 +23,7 @@ Maven plugins and CI adapters. Everything in this document applies to all of the
 - [Using it as a library](#using-it-as-a-library)
 - [In CI](#in-ci)
 - [CI adapter (Jenkins, GitLab CI)](#ci-adapter-jenkins-gitlab-ci)
+- [Maven](#maven)
 - [GitHub Action](#github-action)
 - [After an update: resolve every bndrun](#after-an-update-resolve-every-bndrun)
 - [Limits](#limits)
@@ -427,6 +428,27 @@ For Jenkins: [ci/jenkins/README.md](../ci/jenkins/README.md) and the pipeline
 `ci/jenkins/Jenkinsfile.example` (weekly cron on the main branch, credentials, pinned script). A
 GitLab CI template follows (#38).
 
+## Maven
+
+For projects built with the bnd Maven plugins, see the runnable example
+[examples/maven-sbom](../examples/maven-sbom/README.md).
+
+- **SBOM:** `bnd-export-maven-plugin` with `<exporter>bnd.sbom</exporter>` and
+  `org.geckoprojects.bnd:org.gecko.bnd.sbom` as plugin dependency; in the bndrun
+  `-plugin.sbom: org.gecko.bnd.sbom.SbomExporter`. No plugin of our own is needed.
+- **Vulnerability fixes:** `org.geckoprojects.bnd:bnd-update-maven-plugin`, goal
+  `vulnerabilities` (phase `verify`): the [vulnerabilities function](#function-2-vulnerabilities)
+  with the versions of the project's Maven repositories, resolved by Maven itself (mirrors,
+  proxies, credentials of `settings.xml`). Parameters `trivyReport`, `sbom`, `scope`, `policy`
+  (`-update-policy` syntax), `format`, `failOn` (`none`, `unfixable`, `vulnerable`), `skip`; report
+  in `target/bnd-update/`.
+- **Updates and re-resolution:** in a Maven project the versions live in the `pom.xml`, which
+  Dependabot updates natively; `bnd-resolver-maven-plugin` re-resolves the bndruns afterwards.
+  The plugin therefore has no `apply` goal.
+
+The plugin is built with Maven in `maven-plugin/` (outside the bnd workspace) against the
+`org.gecko.bnd.update` library.
+
 ## GitHub Action
 
 `.github/actions/bnd-update` runs `apply` and turns the result into **one pull request**: it
@@ -544,5 +566,5 @@ build passes, with `--build-command`), and writes the new `-runbundles`.
 Tracked in [#31](https://github.com/geckoprojects-org/org.gecko.bnd.sbom/issues/31):
 
 - GitLab CI and Jenkins adapters that open merge requests (#38)
-- Gradle plugin (#36), Maven plugin (#37)
+- Gradle plugin (#36)
 - optional: report the SBOM's dependencies to GitHub for Dependabot alerts (#32)

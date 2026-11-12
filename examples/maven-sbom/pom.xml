@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Example: SBOM and vulnerability fixes for a project built with the bnd Maven plugins.
+
+    mvn package                         SBOM of app.bndrun: target/app.bndrun.cdx.json
+    trivy sbom -f json -o trivy.json target/app.bndrun.cdx.json
+    mvn verify                          + fixes within the version policy: target/bnd-update/
+
+  See README.md. CI builds it with the sample report: mvn verify -Dbnd-update.trivy=trivy-sample.json
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+
+	<groupId>org.example</groupId>
+	<artifactId>maven-sbom-example</artifactId>
+	<version>1.0.0</version>
+	<packaging>pom</packaging>
+
+	<properties>
+		<bnd.version>7.4.0</bnd.version>
+		<gecko.bnd.version>0.1.0-SNAPSHOT</gecko.bnd.version>
+		<!-- the Trivy report of the SBOM; CI passes trivy-sample.json -->
+		<bnd-update.trivy>${project.basedir}/trivy.json</bnd-update.trivy>
+	</properties>
+
+	<!-- only for the -SNAPSHOT versions of org.gecko.bnd.sbom and bnd-update-maven-plugin -->
+	<repositories>
+		<repository>
+			<id>central-snapshots</id>
+			<url>https://central.sonatype.com/repository/maven-snapshots/</url>
+			<releases><enabled>false</enabled></releases>
+			<snapshots><enabled>true</enabled></snapshots>
+		</repository>
+	</repositories>
+	<pluginRepositories>
+		<pluginRepository>
+			<id>central-snapshots</id>
+			<url>https://central.sonatype.com/repository/maven-snapshots/</url>
+			<releases><enabled>false</enabled></releases>
+			<snapshots><enabled>true</enabled></snapshots>
+		</pluginRepository>
+	</pluginRepositories>
+
+	<!-- the bundles of the application; app.bndrun takes them from here -->
+	<dependencies>
+		<dependency>
+			<groupId>org.slf4j</groupId>
+			<artifactId>slf4j-api</artifactId>
+			<version>2.0.17</version>
+		</dependency>
+		<dependency>
+			<groupId>org.apache.felix</groupId>
+			<artifactId>org.apache.felix.framework</artifactId>
+			<version>7.0.5</version>
+		</dependency>
+	</dependencies>
+
+	<build>
+		<plugins>
+			<!-- the SBOM: bnd's export plugin with the exporter as plugin dependency -->
+			<plugin>
+				<groupId>biz.aQute.bnd</groupId>
+				<artifactId>bnd-export-maven-plugin</artifactId>
+				<version>${bnd.version}</version>
+				<configuration>
+					<bndruns>
+						<bndrun>app.bndrun</bndrun>
+					</bndruns>
+					<exporter>bnd.sbom</exporter>
+					<resolve>false</resolve>
+				</configuration>
+				<executions>
+					<execution>
+						<goals>
+							<goal>export</goal>
+						</goals>
+					</execution>
+				</executions>
+				<dependencies>
+					<dependency>
+						<groupId>org.geckoprojects.bnd</groupId>
+						<artifactId>org.gecko.bnd.sbom</artifactId>
+						<version>${gecko.bnd.version}</version>
+					</dependency>
+				</dependencies>
+			</plugin>
+
+			<!-- fixes for the vulnerabilities Trivy finds in that SBOM -->
+			<plugin>
+				<groupId>org.geckoprojects.bnd</groupId>
+				<artifactId>bnd-update-maven-plugin</artifactId>
+				<version>${gecko.bnd.version}</version>
+				<configuration>
+					<trivyReport>${bnd-update.trivy}</trivyReport>
+					<sbom>${project.build.directory}/app.bndrun.cdx.json</sbom>
+					<scope>micro</scope>
+					<failOn>none</failOn>
+				</configuration>
+				<executions>
+					<execution>
+						<goals>
+							<goal>vulnerabilities</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+		</plugins>
+	</build>
+</project>

@@ -9,8 +9,9 @@ Export-Package: \
 	org.gecko.bnd.update.maven;version=${base-version},\
 	org.gecko.bnd.update.report;version=${base-version}
 
-# bnd is the runtime: bndlib and the Maven repository support come with it
--maven-scope: provided
+# A standalone library: whoever uses it outside bnd (the Maven plugin, a service, a test) needs
+# bndlib and the Maven repository support at runtime, so they are compile dependencies of its
+# POM - unlike the SBOM exporter, a bnd plugin, whose runtime bnd itself is.
 
 -buildpath: \
 	biz.aQute.bndlib;version=latest,\
@@ -27,3 +28,11 @@ Export-Package: \
 	assertj-core;version=latest,\
 	org.osgi.util.function;version=latest,\
 	org.osgi.util.promise;version=latest
+
+# The fennec library's default build path (annotations), as provided: they have CLASS retention
+# and are not needed at runtime (docs/maven-scopes.md, rule 1).
+-buildpath.base: \
+	org.osgi.annotation.versioning;maven-scope=provided,\
+	org.osgi.annotation.bundle;maven-scope=provided,\
+	org.osgi.service.component.annotations;maven-scope=provided,\
+	org.osgi.service.metatype.annotations;maven-scope=provided

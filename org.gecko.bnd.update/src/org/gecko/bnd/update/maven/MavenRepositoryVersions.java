@@ -69,8 +69,8 @@ public final class MavenRepositoryVersions implements VersionSource {
 		return new ArrayList<>(versions);
 	}
 
-	/** -SNAPSHOT, -rc1, -beta12, -alpha, -M3: not proposed as a fix. */
-	static boolean isPreRelease(MavenVersion version) {
+	/** -SNAPSHOT, -rc1, -beta12, -alpha, -M3: not proposed as a fix or update. */
+	public static boolean isPreRelease(MavenVersion version) {
 		String text = version.toString()
 			.toLowerCase(Locale.ROOT);
 		return text.endsWith("-snapshot") || text.matches(".*[-.](alpha|beta|rc|cr|m|milestone|preview|pre)[-.]?\\d*([-.].*)?$");
