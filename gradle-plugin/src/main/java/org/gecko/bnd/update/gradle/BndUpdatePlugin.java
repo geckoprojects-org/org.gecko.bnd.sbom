@@ -13,7 +13,11 @@
  */
 package org.gecko.bnd.update.gradle;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
 import java.util.Map;
+import java.util.Properties;
 
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
@@ -48,7 +52,7 @@ public class BndUpdatePlugin implements Plugin<Project> {
 		extension.getFailOnFindings()
 			.convention(false);
 		extension.getCliVersion()
-			.convention("0.1.0-SNAPSHOT");
+			.convention(pluginVersion());
 		extension.getOutputDirectory()
 			.convention(project.getLayout()
 				.getBuildDirectory()
@@ -119,6 +123,19 @@ public class BndUpdatePlugin implements Plugin<Project> {
 				.forEach(sub -> task.configure(t -> t.dependsOn(sub.getTasks()
 					.matching(other -> other.getName()
 						.equals("jar")))));
+		}
+	}
+
+	/** The plugin's own version: by default it runs the CLI of the same release. */
+	static String pluginVersion() {
+		try (InputStream in = BndUpdatePlugin.class.getResourceAsStream("plugin.properties")) {
+			Properties properties = new Properties();
+			if (in != null) {
+				properties.load(in);
+			}
+			return properties.getProperty("version", "0.1.0-SNAPSHOT");
+		} catch (IOException e) {
+			throw new UncheckedIOException(e);
 		}
 	}
 

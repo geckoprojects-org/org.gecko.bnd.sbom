@@ -1,13 +1,21 @@
 plugins {
     id 'java-gradle-plugin'
+    id 'maven-publish'
+    id 'signing'
 }
 
 group = 'org.geckoprojects.bnd'
-version = '0.1.0-SNAPSHOT'
+// ci/publish-plugins.sh sets it from the workspace's base-version (-PpluginVersion=...)
+version = findProperty('pluginVersion') ?: '0.1.0-SNAPSHOT'
 description = 'Gradle tasks for bnd update: updates, vulnerabilities, resolve and apply for a bnd workspace.'
 
 repositories {
     mavenCentral()
+}
+
+java {
+    withSourcesJar()
+    withJavadocJar()
 }
 
 tasks.withType(JavaCompile).configureEach {
@@ -24,6 +32,79 @@ gradlePlugin {
             description = project.description
         }
     }
+}
+
+// the plugin's version is the default version of the CLI it runs
+tasks.named('processResources') {
+    def v = project.version.toString()
+    inputs.property('version', v)
+    filesMatching('org/gecko/bnd/update/gradle/plugin.properties') {
+        expand(version: v)
+    }
+}
+
+// Publishing: ci/publish-plugins.sh names the target repository (-PpublishUrl=..., credentials in
+// ORG_GRADLE_PROJECT_targetUsername/-Password) and runs publishAllPublicationsToTargetRepository.
+publishing {
+    publications.withType(MavenPublication).configureEach {
+        pom {
+            name = 'bnd update Gradle plugin'
+            description = project.description
+            url = 'https://github.com/geckoprojects-org/org.gecko.bnd.sbom'
+            organization {
+                name = 'Data In Motion Consulting GmbH'
+            }
+            licenses {
+                license {
+                    name = 'Eclipse Public License 2.0'
+                    url = 'https://www.eclipse.org/legal/epl-2.0/'
+                    distribution = 'repo'
+                }
+            }
+            developers {
+                developer {
+                    id = 'mhoffmann'
+                    name = 'Mark Hoffmann'
+                    email = 'm.hoffmann@datainmotion.com'
+                    organization = 'Data In Motion'
+                    organizationUrl = 'https://www.datainmotion.com'
+                }
+                developer {
+                    id = 'jalbert'
+                    name = 'Juergen Albert'
+                    email = 'j.albert@datainmotion.com'
+                    organization = 'Data In Motion'
+                    organizationUrl = 'https://www.datainmotion.com'
+                }
+            }
+            scm {
+                url = 'https://github.com/geckoprojects-org/org.gecko.bnd.sbom'
+                connection = 'scm:git:https://github.com/geckoprojects-org/org.gecko.bnd.sbom.git'
+                developerConnection = 'scm:git:git@github.com:geckoprojects-org/org.gecko.bnd.sbom.git'
+            }
+        }
+    }
+    repositories {
+        if (findProperty('publishUrl')) {
+            maven {
+                name = 'target'
+                url = findProperty('publishUrl')
+                if (!url.toString().startsWith('file:')) {
+                    credentials(PasswordCredentials)
+                }
+            }
+        }
+    }
+}
+
+// Signed with the gpg command (the agent's keyring, GNUPGHOME) when -Psign=true: releases
+signing {
+    required = { findProperty('sign') == 'true' }
+    useGpgCmd()
+    sign publishing.publications
+}
+tasks.withType(Sign).configureEach {
+    onlyIf { findProperty('sign') == 'true' }
 }
 
 dependencies {

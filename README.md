@@ -209,11 +209,13 @@ Publishing is done by Jenkins (`Jenkinsfile`); GitHub Actions only builds and te
 
 | Branch | Result |
 |---|---|
-| `snapshot` | `-SNAPSHOT` bundles to the DIM Nexus (`dim-snapshot`) and the Central Portal snapshot repository |
-| `main` | release bundles to the DIM Nexus (`dim-release`) and, signed, to Maven Central |
+| `snapshot` | `-SNAPSHOT` bundles and plugins to the DIM Nexus (`dim-snapshot`) and the Central Portal snapshot repository |
+| `main` | release bundles and plugins to the DIM Nexus (`dim-release`) and, signed, to Maven Central |
 | any other | build and test |
 
-The mechanics are in `cnf/ext/release.bnd`.
+The mechanics are in `cnf/ext/release.bnd`; the Maven and Gradle plugins, built outside the bnd
+workspace, are published by `ci/publish-plugins.sh` with the same version
+([docs/bnd-update.md](docs/bnd-update.md#publishing-the-plugins)).
 
 ## License
 

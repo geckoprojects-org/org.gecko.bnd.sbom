@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Logins for ci/publish-plugins.sh, from the environment Jenkins sets (see Jenkinsfile): the ids
+  are the repository ids the script deploys to.
+-->
+<settings xmlns="http://maven.apache.org/SETTINGS/1.2.0">
+	<servers>
+		<server>
+			<id>nexus</id>
+			<username>${env.NEXUS_USERNAME}</username>
+			<password>${env.NEXUS_PASSWORD}</password>
+		</server>
+		<server>
+			<id>central</id>
+			<username>${env.CS_USERNAME}</username>
+			<password>${env.CS_PASSWORD}</password>
+		</server>
+	</servers>
+</settings>

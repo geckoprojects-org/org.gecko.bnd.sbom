@@ -125,9 +125,37 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
 
-      - name: Build the CLI
-        run: ./gradlew :org.gecko.bnd.update.cli:jar --no-daemon --stacktrace
+      - name: Build the bnd workspace
+        run: ./gradlew assemble --no-daemon --stacktrace
 
       # TestKit runs the tasks on a minimal bnd workspace with the CLI of this commit
       - name: Build and test the Gradle plugin
         run: ./gradlew -p gradle-plugin build --no-daemon --stacktrace
+
+      # ci/publish-plugins.sh as Jenkins runs it, into local directories instead of the Nexus
+      # and the Portal
+      - name: Publish snapshot plugins into a local directory
+        run: |
+          ci/publish-plugins.sh
+          test -n "$(find "$RUNNER_TEMP/snapshots" -name 'bnd-update-maven-plugin-*.jar')"
+          test -n "$(find "$RUNNER_TEMP/snapshots" -name 'org.geckoprojects.bnd.update.gradle.plugin-*.pom')"
+        env:
+          NEXUS_SNAPSHOT_URL: file://${{ runner.temp }}/snapshots
+          MAVEN_REPO_LOCAL: ${{ runner.temp }}/m2
+
+      # a release as on main, signed with a throwaway key, into dist/bundles only
+      - name: Publish release plugins into dist/bundles
+        run: |
+          export GNUPGHOME="$RUNNER_TEMP/gnupg" GPG_PASSPHRASE="$(openssl rand -hex 16)"
+          mkdir -m 700 "$GNUPGHOME"
+          gpg --batch --quiet --passphrase "$GPG_PASSPHRASE" --quick-gen-key 'CI throwaway <ci@invalid>' ed25519 sign 1d
+          ./gradlew assemble --no-daemon --stacktrace
+          ci/publish-plugins.sh
+          jars=$(find dist/bundles -name '*.jar' | wc -l); signed=$(find dist/bundles -name '*.jar.asc' | wc -l)
+          echo "dist/bundles: $jars jars, $signed signatures"
+          [ "$jars" -ge 6 ] && [ "$jars" = "$signed" ]
+          for a in $(find dist/bundles -name '*.asc'); do gpg --batch --quiet --verify "$a" "${a%.asc}"; done
+        env:
+          DO_RELEASE: 'true'
+          NEXUS_RELEASE: 'false'
+          MAVEN_REPO_LOCAL: ${{ runner.temp }}/m2
