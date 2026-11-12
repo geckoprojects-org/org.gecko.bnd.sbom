@@ -1,0 +1,32 @@
+# Example .gitlab-ci.yml of a bnd workspace: the usual build plus bnd update on a schedule.
+# Pipeline schedule: CI/CD > Schedules, target branch main, variable BND_UPDATE=true.
+
+include:
+  - remote: https://raw.githubusercontent.com/geckoprojects-org/org.gecko.bnd.sbom/<commit>/ci/gitlab/bnd-update.gitlab-ci.yml
+    integrity: sha256-<base64>
+
+stages:
+  - build
+  - update
+
+build:
+  stage: build
+  image: eclipse-temurin:21-jdk
+  rules:
+    # not in the bnd update pipeline
+    - if: '$BND_UPDATE != "true"'
+  script:
+    - ./gradlew build --no-daemon
+  artifacts:
+    # the SBOMs of the bndruns: GitLab's dependency list (and, with the tier, its vulnerabilities)
+    reports:
+      cyclonedx:
+        - "*/generated/sbom/*/*.cdx.json"
+
+bnd-update:
+  extends: .bnd-update
+  stage: update
+  variables:
+    BND_UPDATE_COMMIT: <commit>
+    BND_UPDATE_SHA256: <sha256>
+    SCOPE: micro

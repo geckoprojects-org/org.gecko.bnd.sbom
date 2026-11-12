@@ -425,8 +425,13 @@ with `DRY_RUN=true` it shows what it would push and request. It needs bash, git,
 no jq or Python.
 
 For Jenkins: [ci/jenkins/README.md](../ci/jenkins/README.md) and the pipeline
-`ci/jenkins/Jenkinsfile.example` (weekly cron on the main branch, credentials, pinned script). A
-GitLab CI template follows (#38).
+`ci/jenkins/Jenkinsfile.example` (weekly cron on the main branch, credentials, pinned script).
+
+For GitLab CI: [ci/gitlab/README.md](../ci/gitlab/README.md) and the template
+`ci/gitlab/bnd-update.gitlab-ci.yml`. It has a hidden job `.bnd-update` for a pipeline schedule
+with `BND_UPDATE=true`, needs a project access token as `GITLAB_TOKEN`, and is included pinned with
+`integrity`. The example `ci/gitlab/gitlab-ci.example.yml` also hands the SBOMs to GitLab as a
+`cyclonedx` report.
 
 ## Maven
 
@@ -604,6 +609,5 @@ build passes, with `--build-command`), and writes the new `-runbundles`.
 
 Tracked in [#31](https://github.com/geckoprojects-org/org.gecko.bnd.sbom/issues/31):
 
-- GitLab CI template that opens merge requests (#38)
 - publish the Maven and Gradle plugins from Jenkins (#47)
 - optional: report the SBOM's dependencies to GitHub for Dependabot alerts (#32)

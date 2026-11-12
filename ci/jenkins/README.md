@@ -22,7 +22,7 @@ merged into an existing `Jenkinsfile`.
 | bash, git, curl | on the agent |
 | built workspace | `./gradlew assemble` before the script — bndruns that run the workspace's own bundles only resolve when those exist |
 | GitHub token | a *Secret text* credential with a fine-grained token: *Contents* and *Pull requests* read/write on the repository; passed as `GITHUB_TOKEN`, plus `GITHUB_REPOSITORY=owner/repo` |
-| GitLab token | a project access token with `api` and `write_repository`; passed as `GITLAB_TOKEN`, plus `CI_PROJECT_ID`, `CI_PROJECT_PATH`, `CI_API_V4_URL`, `CI_SERVER_HOST` (outside GitLab CI they are not set automatically) |
+| GitLab token | a project access token with `api` and `write_repository`; passed as `GITLAB_TOKEN`, plus `CI_PROJECT_ID`, `CI_PROJECT_PATH`, `CI_API_V4_URL`, `CI_SERVER_URL` (outside GitLab CI they are not set automatically) |
 | commit identity | `GIT_NAME`, `GIT_EMAIL` (the `Signed-off-by` line uses them, for DCO checks) |
 | schedule | `triggers { cron(...) }`, guarded to the target branch; `UserIdCause` allows running it by hand |
 
