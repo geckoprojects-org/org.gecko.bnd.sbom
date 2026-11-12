@@ -105,6 +105,7 @@ public final class CycloneDxSerializer implements SbomSerializer {
 		putIfPresent(app, "group", model.getApplicationGroup());
 		app.put("name", model.getApplicationName());
 		putIfPresent(app, "version", model.getApplicationVersion());
+		putIfPresent(app, "purl", model.getApplicationPurl());
 		List<Object> references = new ArrayList<>();
 		if (model.getVcsUrl() != null) {
 			references.add(reference("vcs", model.getVcsUrl()));
@@ -117,15 +118,17 @@ public final class CycloneDxSerializer implements SbomSerializer {
 		}
 		metadata.put("component", app);
 
-		// A2.5/Q4: why the BOM is incomplete. compositions may not carry properties (schema), so
-		// the declared gaps go into the metadata's properties.
-		if (!model.getKnownUnknowns()
-			.isEmpty()) {
-			List<Object> notes = new ArrayList<>();
-			for (String unknown : model.getKnownUnknowns()) {
-				notes.add(property("osgi:known-unknown", unknown));
-			}
-			metadata.put("properties", notes);
+		// The build's own properties (property.<name> in -sbom: commit, image reference), then
+		// A2.5/Q4: why the BOM is incomplete — compositions may not carry properties (schema), so
+		// the declared gaps go here as well.
+		List<Object> properties = new ArrayList<>();
+		model.getProperties()
+			.forEach((name, value) -> properties.add(property(name, value)));
+		for (String unknown : model.getKnownUnknowns()) {
+			properties.add(property("osgi:known-unknown", unknown));
+		}
+		if (!properties.isEmpty()) {
+			metadata.put("properties", properties);
 		}
 		return metadata;
 	}

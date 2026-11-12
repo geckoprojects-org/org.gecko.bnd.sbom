@@ -92,6 +92,14 @@ public final class SpdxSerializer implements SbomSerializer {
 		doc.put("documentNamespace",
 			NAMESPACE_BASE + sanitize(appName) + "-" + SerialNumbers.of(model, refs, config));
 		doc.put("creationInfo", creationInfo(created, model));
+		// SPDX 2.3 has no free properties: the build's own (property.<name>) go into the comment
+		if (!model.getProperties()
+			.isEmpty()) {
+			List<String> lines = new ArrayList<>();
+			model.getProperties()
+				.forEach((name, value) -> lines.add(name + "=" + value));
+			doc.put("comment", String.join("\n", lines));
+		}
 		if (!extracted.infos.isEmpty()) {
 			doc.put("hasExtractedLicensingInfos", extracted.infos);
 		}
@@ -132,6 +140,13 @@ public final class SpdxSerializer implements SbomSerializer {
 		pkg.put("licenseDeclared", NOASSERTION);
 		if (model.getWebsiteUrl() != null) {
 			pkg.put("homepage", model.getWebsiteUrl());
+		}
+		if (model.getApplicationPurl() != null) {
+			Map<String, Object> ref = new LinkedHashMap<>();
+			ref.put("referenceCategory", "PACKAGE-MANAGER");
+			ref.put("referenceType", "purl");
+			ref.put("referenceLocator", model.getApplicationPurl());
+			pkg.put("externalRefs", listOf(ref));
 		}
 		if (model.getApplicationGroup() != null) {
 			pkg.put("comment", "Group: " + model.getApplicationGroup() + ".");

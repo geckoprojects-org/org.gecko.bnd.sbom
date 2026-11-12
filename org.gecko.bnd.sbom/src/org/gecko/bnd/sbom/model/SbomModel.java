@@ -30,6 +30,10 @@ public final class SbomModel {
 	private String						applicationName;
 	private String						applicationGroup;
 	private String						applicationVersion;
+	/** PURL of the application, if one was given ({@code application.purl}). */
+	private String						applicationPurl;
+	/** Free properties of the BOM ({@code property.<name>}), in the order given. */
+	private final Map<String, String>	properties				= new LinkedHashMap<>();
 	/** Source repository of the application (CycloneDX {@code vcs} reference). */
 	private String						vcsUrl;
 	/** Website of the application (CycloneDX {@code website}, SPDX {@code homepage}). */
@@ -76,6 +80,24 @@ public final class SbomModel {
 
 	public SbomModel setApplicationVersion(String applicationVersion) {
 		this.applicationVersion = applicationVersion;
+		return this;
+	}
+
+	public String getApplicationPurl() {
+		return applicationPurl;
+	}
+
+	public SbomModel setApplicationPurl(String applicationPurl) {
+		this.applicationPurl = applicationPurl;
+		return this;
+	}
+
+	public Map<String, String> getProperties() {
+		return properties;
+	}
+
+	public SbomModel addProperty(String name, String value) {
+		properties.put(name, value);
 		return this;
 	}
 
