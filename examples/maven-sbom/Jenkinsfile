@@ -1,0 +1,51 @@
+// Jenkins pipeline of the Maven example: SBOM, Trivy, fixes within the version policy. See
+// README.md. Version updates in the pom.xml are left to Dependabot/Renovate or the developer;
+// bnd-resolver-maven-plugin re-resolves the bndruns afterwards.
+//
+// Agent: Java 21, Maven ('Maven3' below: the name of the Maven installation in Jenkins), Trivy on
+// the PATH (https://trivy.dev; or see the Docker variant below).
+
+pipeline {
+    agent any
+
+    tools {
+        jdk 'OpenJDK21'
+        maven 'Maven3'
+    }
+
+    options {
+        disableConcurrentBuilds()
+    }
+
+    stages {
+        stage('Build and SBOM') {
+            steps {
+                // target/app.bndrun.cdx.json
+                sh 'mvn -B package'
+            }
+        }
+
+        stage('Trivy') {
+            steps {
+                sh 'trivy sbom --format json --output trivy.json target/app.bndrun.cdx.json'
+                // without Trivy on the agent:
+                // sh 'docker run --rm -v "$PWD:/work" -w /work aquasec/trivy:<version> sbom --format json --output trivy.json target/app.bndrun.cdx.json'
+            }
+        }
+
+        stage('Fixes') {
+            steps {
+                // a vulnerable library without a fix within the policy makes the build unstable
+                catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+                    sh 'mvn -B verify -Dbnd-update.trivy=trivy.json -Dbnd-update.failOn=unfixable'
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            archiveArtifacts allowEmptyArchive: true, artifacts: 'target/*.cdx.json,trivy.json,target/bnd-update/*'
+        }
+    }
+}

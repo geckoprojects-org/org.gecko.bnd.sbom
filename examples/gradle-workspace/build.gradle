@@ -1,0 +1,51 @@
+// The root project of the bnd workspace: the bnd update tasks and the SBOM exporter.
+
+plugins {
+    id 'org.geckoprojects.bnd.update' version '0.1.0-SNAPSHOT'
+}
+
+repositories {
+    mavenCentral()
+    // only for -SNAPSHOT versions of the exporter and the bnd update CLI
+    maven { url = 'https://central.sonatype.com/repository/maven-snapshots/' }
+}
+
+// The SBOM exporter is a bnd plugin. Gradle fetches it (checksums verified, version visible to
+// Dependabot) and puts it where the bndruns' -plugin.sbom expects it.
+configurations {
+    sbomExporter {
+        canBeConsumed = false
+        transitive = false
+    }
+}
+dependencies {
+    sbomExporter 'org.geckoprojects.bnd:org.gecko.bnd.sbom:0.1.0-SNAPSHOT'
+}
+def exporterJar = providers.gradleProperty('sbomExporterJar')
+tasks.register('sbomExporter', Sync) {
+    description = 'Copies the SBOM exporter to cnf/cache/sbom-exporter/, where the bndruns load it.'
+    from(exporterJar.isPresent() ? files(exporterJar.get()) : configurations.sbomExporter)
+    into 'cnf/cache/sbom-exporter'
+    rename { 'org.gecko.bnd.sbom.jar' }
+}
+
+// the bnd update CLI reads the bndruns, and with them -plugin.sbom
+['bndResolveCheck', 'bndApply'].each { name ->
+    tasks.named(name) { dependsOn 'sbomExporter' }
+}
+
+bndUpdate {
+    // micro only by default; cnf/build.bnd can widen it per library with -update-policy
+    scope = 'micro'
+    // bndVulnerabilities: trivy sbom --format json --output trivy.json example.app/generated/sbom/app.bndrun.cdx.json
+    trivyReport = file(providers.gradleProperty('trivyReport').getOrElse('trivy.json'))
+    sbom = file('example.app/generated/sbom/app.bndrun.cdx.json')
+    // fail bndVulnerabilities/bndResolveCheck on findings that need a decision (-PfailOnFindings=true)
+    failOnFindings = providers.gradleProperty('failOnFindings').map { it == 'true' }.orElse(false)
+    // bndApply: verify each update with a build
+    buildCommand = './gradlew build --no-daemon'
+    // CI of org.gecko.bnd.sbom: the CLI of the same commit (-PbndUpdateCli=...)
+    if (providers.gradleProperty('bndUpdateCli').isPresent()) {
+        cliJar.from(providers.gradleProperty('bndUpdateCli').get())
+    }
+}

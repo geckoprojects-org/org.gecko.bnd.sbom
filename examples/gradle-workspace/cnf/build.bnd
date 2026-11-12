@@ -1,0 +1,20 @@
+# Workspace configuration of the example.
+
+-groupid: org.example
+
+# The libraries of the workspace: a Maven index, one GAV per line. bnd update proposes and
+# applies new versions here.
+-plugin.central: \
+	aQute.bnd.repository.maven.provider.MavenBndRepository;\
+		releaseUrl=https://repo.maven.apache.org/maven2/;\
+		index=${.}/central.mvn;\
+		readOnly=true;\
+		name=Central
+
+-runee: JavaSE-21
+javac.source: 21
+javac.target: 21
+
+# Version policy of bnd update (docs/bnd-update.md): micro updates by default; minor for slf4j,
+# whose minor releases stay compatible.
+-update-policy: default;scope=micro, org.slf4j:*;scope=minor

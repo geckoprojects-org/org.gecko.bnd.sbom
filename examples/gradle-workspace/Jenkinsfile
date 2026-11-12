@@ -1,0 +1,103 @@
+// Jenkins pipeline of the Gradle example: build, SBOM, Trivy, fixes within the version policy, and
+// once a week a pull request with the verified updates. See README.md.
+//
+// Agent: Java 21, git, curl, Trivy on the PATH (https://trivy.dev; or see the Docker variant
+// below). Credential 'github-bnd-update-token' (secret text) only for the weekly stage.
+
+pipeline {
+    agent any
+
+    tools {
+        jdk 'OpenJDK21'
+    }
+
+    triggers {
+        // the weekly update run, only on the main branch
+        cron(env.BRANCH_NAME == 'main' ? 'H 5 * * 2' : '')
+    }
+
+    options {
+        disableConcurrentBuilds()
+    }
+
+    stages {
+        stage('Build') {
+            steps {
+                sh './gradlew build --no-daemon'
+            }
+        }
+
+        stage('SBOM') {
+            steps {
+                // example.app/generated/sbom/app.bndrun.cdx.json
+                sh './gradlew sbom --no-daemon'
+            }
+        }
+
+        stage('Trivy') {
+            steps {
+                sh 'trivy sbom --format json --output trivy.json example.app/generated/sbom/app.bndrun.cdx.json'
+                // without Trivy on the agent:
+                // sh 'docker run --rm -v "$PWD:/work" -w /work aquasec/trivy:<version> sbom --format json --output trivy.json example.app/generated/sbom/app.bndrun.cdx.json'
+            }
+        }
+
+        stage('Fixes') {
+            steps {
+                // a vulnerability without a fix within the policy, or a bndrun that no longer
+                // resolves, makes the build unstable, not failed
+                catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+                    sh './gradlew bndVulnerabilities bndResolveCheck -PfailOnFindings=true --no-daemon'
+                }
+            }
+        }
+
+        // Weekly: apply the updates the policy allows, verify them (every bndrun resolves, the
+        // build passes) and open or update one pull request: ci/bnd-update.sh of
+        // org.gecko.bnd.sbom, pinned. See ci/jenkins/README.md there.
+        stage('bnd update') {
+            when {
+                allOf {
+                    branch 'main'
+                    anyOf {
+                        triggeredBy 'TimerTrigger'
+                        triggeredBy cause: 'UserIdCause'
+                    }
+                }
+            }
+            environment {
+                BND_UPDATE_COMMIT = '<commit>'
+                BND_UPDATE_SHA256 = '<sha256>'
+            }
+            steps {
+                sh 'git reset --hard && git clean -fdx -e .gradle'
+                sh './gradlew assemble --no-daemon'
+                sh '''
+                    curl -fsSL -o "$WORKSPACE@tmp/bnd-update.sh" \
+                      "https://raw.githubusercontent.com/geckoprojects-org/org.gecko.bnd.sbom/$BND_UPDATE_COMMIT/ci/bnd-update.sh"
+                    echo "$BND_UPDATE_SHA256  $WORKSPACE@tmp/bnd-update.sh" | sha256sum -c --strict -
+                '''
+                withCredentials([string(credentialsId: 'github-bnd-update-token', variable: 'GITHUB_TOKEN')]) {
+                    sh '''
+                        GITHUB_REPOSITORY=my-org/my-workspace \
+                        BUILD_COMMAND="./gradlew build --no-daemon" \
+                        GIT_NAME="bnd update" GIT_EMAIL="bnd-update@example.org" \
+                        bash "$WORKSPACE@tmp/bnd-update.sh"
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            archiveArtifacts allowEmptyArchive: true, artifacts: '''
+                example.app/generated/sbom/*.json,
+                trivy.json,
+                build/bnd-update/*,
+                bnd-update-report.md
+            '''.replaceAll('\\s', '')
+            junit allowEmptyResults: true, testResults: '*/generated/test-reports/**/TEST-*.xml'
+        }
+    }
+}

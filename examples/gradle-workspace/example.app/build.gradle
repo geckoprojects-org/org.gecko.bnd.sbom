@@ -1,0 +1,20 @@
+import aQute.bnd.gradle.Export
+import aQute.bnd.gradle.Resolve
+import aQute.bnd.gradle.TestOSGi
+
+// app.bndrun registers the SBOM exporter (-plugin.sbom), so every task that reads the bndrun
+// needs the exporter jar first
+[Export, Resolve, TestOSGi].each { type ->
+    tasks.withType(type).configureEach {
+        dependsOn rootProject.tasks.named('sbomExporter')
+    }
+}
+
+// ./gradlew sbom: the SBOM of app.bndrun, written by the SBOM exporter
+tasks.register('sbom', Export) {
+    description = 'Writes the SBOM of app.bndrun (CycloneDX, generated/sbom/).'
+    group = 'export'
+    bndrun = file('app.bndrun')
+    exporter = 'bnd.sbom'
+    destinationDirectory = layout.projectDirectory.dir('generated/sbom')
+}

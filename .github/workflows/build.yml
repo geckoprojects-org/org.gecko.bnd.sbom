@@ -132,6 +132,22 @@ jobs:
       - name: Build and test the Gradle plugin
         run: ./gradlew -p gradle-plugin build --no-daemon --stacktrace
 
+      # examples/gradle-workspace with the Gradle plugin, the CLI and the exporter of this commit
+      - name: Run the Gradle example with the sample Trivy report
+        run: |
+          ./gradlew -p examples/gradle-workspace --no-daemon --stacktrace \
+            -PlocalPlugins=true \
+            -PbndUpdateCli="$PWD/org.gecko.bnd.update.cli/generated/org.gecko.bnd.update.cli.jar" \
+            -PsbomExporterJar="$PWD/org.gecko.bnd.sbom/generated/org.gecko.bnd.sbom.jar" \
+            -PtrivyReport=trivy-sample.json \
+            build sbom bndVulnerabilities bndResolveCheck bndUpdates
+          reports=examples/gradle-workspace/build/bnd-update
+          cat "$reports/vulnerabilities.md" "$reports/resolve.md" >> "$GITHUB_STEP_SUMMARY"
+          test -s examples/gradle-workspace/example.app/generated/sbom/app.bndrun.cdx.json
+          grep -q '\*\*2.0.18\*\*' "$reports/vulnerabilities.md"
+          grep -q 'needs a major update' "$reports/vulnerabilities.md"
+          grep -q 'Every bndrun resolves' "$reports/resolve.md"
+
       # ci/publish-plugins.sh as Jenkins runs it, into local directories instead of the Nexus
       # and the Portal
       - name: Publish snapshot plugins into a local directory

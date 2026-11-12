@@ -34,6 +34,14 @@ mvn verify -Dbnd-update.trivy=trivy-sample.json
 
 The findings in `trivy-sample.json` are made up; the versions they point to are real.
 
+## Jenkins
+
+`Jenkinsfile` builds the project and the SBOM (`mvn package`), scans the SBOM with Trivy (on the
+agent, or the Docker variant in a comment) and runs `mvn verify -Dbnd-update.failOn=unfixable`:
+a vulnerable library without a fix within the policy makes the build **unstable**. The SBOM, the
+Trivy report and `target/bnd-update/` are archived. It needs a JDK 21 and a Maven installation
+in Jenkins (`tools { jdk ...; maven ... }`).
+
 ## Configuration of `bnd-update-maven-plugin`
 
 | Parameter | Property | Meaning | Default |

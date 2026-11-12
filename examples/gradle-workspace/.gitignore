@@ -1,0 +1,7 @@
+# build output of the example workspace
+.gradle/
+build/
+bin/
+generated/
+cnf/cache/
+trivy.json
