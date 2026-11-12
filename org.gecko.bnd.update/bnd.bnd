@@ -15,10 +15,12 @@ Export-Package: \
 -buildpath: \
 	biz.aQute.bndlib;version=latest,\
 	biz.aQute.repository;version=latest,\
+	biz.aQute.resolve;version=latest,\
 	biz.aQute.bnd.util;version=latest,\
 	aQute.libg;version=latest,\
 	osgi.core;version=latest,\
 	org.osgi.service.repository;version=latest,\
+	org.osgi.service.resolver;version=latest,\
 	slf4j.api;version=latest
 
 -testpath: \

@@ -1,12 +1,13 @@
 # bnd update: finding updates and fixes for bnd workspaces
 
-`org.gecko.bnd.update` answers two questions for a bnd workspace:
+`org.gecko.bnd.update` answers three questions for a bnd workspace:
 
 1. **Which of our libraries have newer versions?** — independent of any vulnerability report.
 2. **Which of our vulnerable libraries can be fixed, and with which version?** — for a Trivy
    report, using what the workspace's repositories actually offer.
+3. **Does every bndrun still resolve — and to what?** — the safety check after any update.
 
-Both only read. They change no file; applying updates is a separate step (see
+All three only read. They change no file; applying updates is a separate step (see
 [Roadmap](#roadmap)).
 
 The same logic is available as a Java library, as a command line, and — planned — as Gradle and
@@ -52,6 +53,31 @@ For every library in the workspace's Maven repository indexes (`.mvn` files of e
    allows; the *latest* version is reported as well, with the scope it would need.
 
 Libraries without a newer version are not listed.
+
+### Function 3: resolve
+
+Resolves every bndrun of the workspace (the `*.bndrun` files at the top level of each project)
+with bnd's resolver — the same resolver the Gradle `resolve` tasks and Bndtools use — and
+compares the result with the `-runbundles` in the file. Nothing is written.
+
+| Status | Meaning |
+|---|---|
+| `UNCHANGED` | resolves to exactly the `-runbundles` in the file |
+| `CHANGED` | resolves, but to other `-runbundles`: the report lists the bundles added and removed |
+| `FAILED` | does not resolve: the report lists the **unresolved requirements** — which bundle requires which package, bundle or capability in which version range |
+| `ERROR` | could not be evaluated (broken file, workspace error) |
+
+`CHANGED` is not an error, but it means the checked-in bndrun does not describe what the
+workspace resolves today: the indexes offer other versions (`guava 33.5.0 → 33.6.0`), or a
+released bundle now wins over a workspace project with a lower version. After an intended
+update this is expected and the new `-runbundles` belong in the commit; without one it is drift
+that should be looked at.
+
+For a `FAILED` bndrun the unresolved requirements are the reason, e.g.
+`aQute.libg 7.4.0 -> osgi.wiring.package: org.slf4j; version=[2.0.0,3.0.0)`: nothing in the
+repositories exports `org.slf4j` in that range. After an update this is how a too narrow import
+range shows up. bnd's resolver reports it exactly, so no separate pre-check of import ranges is
+needed.
 
 ### Function 2: vulnerabilities
 
@@ -168,6 +194,17 @@ vulnerabilities --trivy FILE [--sbom FILE] [--against-updates]
 For each vulnerable library in the Trivy report: the smallest available version within the
 policy that fixes all its vulnerabilities.
 
+### `resolve`
+
+```
+resolve [--workspace DIR] [--format text|json|markdown] [--output FILE]
+```
+
+Resolves every bndrun of the workspace without writing, and reports per bndrun whether it
+resolves unchanged, changed (with the bundles added and removed) or not at all (with the
+unresolved requirements). Run it after every update; see
+[After an update](#after-an-update-resolve-every-bndrun).
+
 ### Options
 
 | Option | Meaning | Default |
@@ -186,13 +223,13 @@ output file. bnd's own logging is set to warnings (override with
 
 ### Exit codes
 
-| Code | `updates` | `vulnerabilities` |
-|---|---|---|
-| 0 | nothing to update | nothing vulnerable |
-| 1 | updates within the policy | every vulnerable library has a fix within the policy |
-| 2 | — | at least one library has no fix within the policy (`OUTSIDE_POLICY` or `NO_FIX`) |
-| 64 | usage error | usage error |
-| 70 | internal error | internal error |
+| Code | `updates` | `vulnerabilities` | `resolve` |
+|---|---|---|---|
+| 0 | nothing to update | nothing vulnerable | every bndrun resolves to its current `-runbundles` |
+| 1 | updates within the policy | every vulnerable library has a fix within the policy | every bndrun resolves, some to other `-runbundles` |
+| 2 | — | at least one library has no fix within the policy (`OUTSIDE_POLICY` or `NO_FIX`) | at least one bndrun does not resolve |
+| 64 | usage error | usage error | usage error |
+| 70 | internal error | internal error | internal error |
 
 A CI job can therefore fail on 2 (something needs a decision), report on 1 and pass on 0.
 
@@ -219,6 +256,13 @@ try (Workspace workspace = new Workspace(new File("/path/to/workspace"))) {
 		System.out.println(p.library() + " -> " + p.proposed());
 	}
 
+	// function 3: does every bndrun still resolve?
+	ResolveReport resolved = new ResolveCheck(workspace).resolveAll();
+	if (!resolved.allResolve()) {
+		resolved.withStatus(BndrunResult.Status.FAILED)
+			.forEach(r -> System.out.println(r.bndrun() + ": " + r.unresolved()));
+	}
+
 	// renderings
 	String markdown = Reports.markdown(report);
 	String json = Reports.json(updates);
@@ -234,6 +278,8 @@ try (Workspace workspace = new Workspace(new File("/path/to/workspace"))) {
 | `VersionSource` | where available versions come from; `MavenRepositoryVersions` reads the workspace's repositories, tests and other tools can supply their own |
 | `TrivyReport`, `Sbom` | the inputs |
 | `Update`, `Proposal`, `CheckReport`, `Location` | the results |
+| `ResolveCheck` | function 3: resolves all (or given) bndruns without writing |
+| `ResolveReport`, `BndrunResult` | its results: status, added/removed bundles, unresolved requirements |
 | `Reports` | JSON and Markdown renderings |
 
 ## In CI
@@ -297,15 +343,21 @@ range (`Import-Package: com.fasterxml.jackson.databind;version="[2.19,2.20)"`), 
 no longer satisfies it. It can also change what *other* bndruns resolve to. Resolving only the
 bndruns that obviously contain the updated library is not enough.
 
-With Gradle (bnd workspace plugin):
+Check first, without writing:
+
+```
+java -jar org.gecko.bnd.update.cli.jar resolve --format markdown
+```
+
+lists for every bndrun whether it resolves, what changes, and — if it does not resolve — the
+requirements that block it. Then write the new `-runbundles` with Gradle (bnd workspace plugin):
 
 ```
 ./gradlew resolve
 ```
 
-resolves every bndrun of every project and fails on the first one that does not resolve. Then
-build and run the OSGi tests (`./gradlew build testOSGi`) and review the changed `-runbundles`
-in the diff.
+which resolves every bndrun of every project and updates the files. Then build and run the OSGi
+tests (`./gradlew build testOSGi`) and review the changed `-runbundles` in the diff.
 
 The planned `fix` step will do this itself: it proposes an update only when **all** bndruns still
 resolve, and lists the result per bndrun in the PR/MR.
@@ -317,8 +369,8 @@ resolve, and lists the result per bndrun in the PR/MR.
   fix version unless the SBOM maps them to Maven coordinates (`maven.<bsn>` in `-sbom`).
 - **Fix recognition reads the fixed-version list**, not the advisory's exact ranges — see
   [Choosing the fix version](#choosing-the-fix-version).
-- **No compatibility check yet.** The policy limits the step size; whether the bndruns still
-  resolve is checked by the `fix` step (planned) or by you ([above](#after-an-update-resolve-every-bndrun)).
+- **Resolving is not running.** `resolve` proves that the bndruns resolve; whether the
+  application behaves is for the build and the OSGi tests to show.
 - **Network.** Every library costs a metadata request per repository that holds it; large
   workspaces with many repositories take a while.
 
@@ -326,7 +378,6 @@ resolve, and lists the result per bndrun in the PR/MR.
 
 Tracked in [#31](https://github.com/geckoprojects-org/org.gecko.bnd.sbom/issues/31):
 
-- resolvability check of all bndruns (#34)
 - `fix`: apply all or selected updates, resolve, build, report the result; GitHub Action that
   opens PRs (#35); GitLab CI and Jenkins adapters (#38)
 - Gradle plugin (#36), Maven plugin (#37)

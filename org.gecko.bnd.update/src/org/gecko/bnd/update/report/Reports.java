@@ -19,9 +19,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import org.gecko.bnd.update.BndrunResult;
 import org.gecko.bnd.update.CheckReport;
 import org.gecko.bnd.update.Location;
 import org.gecko.bnd.update.Proposal;
+import org.gecko.bnd.update.ResolveReport;
 import org.gecko.bnd.update.Update;
 import org.gecko.bnd.update.Vulnerability;
 
@@ -198,6 +200,82 @@ public final class Reports {
 					.distinct()
 					.collect(Collectors.joining("<br>")))
 				.append(" |\n");
+		}
+		return md.toString();
+	}
+
+	// ---- resolvability
+
+	public static String json(ResolveReport report) throws Exception {
+		List<Object> list = new ArrayList<>();
+		for (BndrunResult r : report.results()) {
+			Map<String, Object> node = new LinkedHashMap<>();
+			node.put("bndrun", r.bndrun());
+			node.put("status", r.status()
+				.name());
+			node.put("added", r.added());
+			node.put("removed", r.removed());
+			node.put("unresolved", r.unresolved());
+			node.put("message", r.message());
+			list.add(node);
+		}
+		Map<String, Object> root = new LinkedHashMap<>();
+		root.put("allResolve", report.allResolve());
+		root.put("bndruns", list);
+		return encode(root);
+	}
+
+	public static String markdown(ResolveReport report) {
+		StringBuilder md = new StringBuilder("## Resolving all bndruns\n\n");
+		if (report.results()
+			.isEmpty()) {
+			return md.append("No bndrun in the workspace.\n")
+				.toString();
+		}
+		md.append(report.allResolve() ? "Every bndrun resolves.\n\n" : "**Not every bndrun resolves.**\n\n");
+		md.append("| bndrun | Result |\n|---|---|\n");
+		for (BndrunResult r : report.results()) {
+			md.append("| `")
+				.append(r.bndrun())
+				.append("` | ")
+				.append(switch (r.status()) {
+					case UNCHANGED -> "resolves, unchanged";
+					case CHANGED -> "resolves, -runbundles change: " + r.added()
+						.size() + " added, " + r.removed()
+							.size()
+						+ " removed";
+					case FAILED -> "**does not resolve**";
+					case ERROR -> "**error**: " + r.message();
+				})
+				.append(" |\n");
+		}
+		for (BndrunResult r : report.results()) {
+			if (r.status() == BndrunResult.Status.CHANGED) {
+				md.append("\n### `")
+					.append(r.bndrun())
+					.append("`: changed -runbundles\n\n");
+				r.removed()
+					.forEach(c -> md.append("- removed `")
+						.append(c)
+						.append("`\n"));
+				r.added()
+					.forEach(c -> md.append("- added `")
+						.append(c)
+						.append("`\n"));
+			} else if (r.status() == BndrunResult.Status.FAILED) {
+				md.append("\n### `")
+					.append(r.bndrun())
+					.append("`: unresolved requirements\n\n");
+				if (r.unresolved()
+					.isEmpty()) {
+					md.append(r.message())
+						.append("\n");
+				}
+				r.unresolved()
+					.forEach(u -> md.append("- `")
+						.append(u)
+						.append("`\n"));
+			}
 		}
 		return md.toString();
 	}

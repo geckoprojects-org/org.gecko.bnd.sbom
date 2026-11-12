@@ -23,8 +23,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.gecko.bnd.update.BndrunResult;
 import org.gecko.bnd.update.CheckReport;
 import org.gecko.bnd.update.Proposal;
+import org.gecko.bnd.update.ResolveCheck;
+import org.gecko.bnd.update.ResolveReport;
 import org.gecko.bnd.update.Sbom;
 import org.gecko.bnd.update.Scope;
 import org.gecko.bnd.update.TrivyReport;
@@ -44,11 +47,14 @@ import aQute.lib.io.IO;
  * bnd-update updates         [--workspace DIR] [--scope micro|minor|major] [--format text|json|markdown] [--output FILE]
  * bnd-update vulnerabilities --trivy FILE [--sbom FILE] [--against-updates]
  *                            [--workspace DIR] [--scope ...] [--format ...] [--output FILE]
+ * bnd-update resolve         [--workspace DIR] [--format ...] [--output FILE]
  * </pre>
  *
  * Exit codes — {@code updates}: 0 nothing to update, 1 updates within the policy.
  * {@code vulnerabilities}: 0 nothing vulnerable, 1 every vulnerable library has a fix within
- * the policy, 2 at least one has no fix within the policy (or none at all). 64 usage error,
+ * the policy, 2 at least one has no fix within the policy (or none at all). {@code resolve}: 0
+ * every bndrun resolves to its current -runbundles, 1 every bndrun resolves but some to other
+ * -runbundles, 2 at least one does not resolve. 64 usage error,
  * 70 internal error.
  */
 public final class Main {
@@ -93,6 +99,7 @@ public final class Main {
 			return switch (args[0]) {
 				case "updates" -> updates(options);
 				case "vulnerabilities" -> vulnerabilities(options);
+				case "resolve" -> resolve(options);
 				default -> {
 					err.println("Unknown command: " + args[0]);
 					usage();
@@ -161,6 +168,42 @@ public final class Main {
 				.allMatch(p -> p.status() == Proposal.Status.UPDATE);
 			return allFixable ? ACTIONABLE : NOT_FIXABLE;
 		}
+	}
+
+	private int resolve(Map<String, String> options) throws Exception {
+		try (Workspace workspace = workspace(options)) {
+			ResolveReport report = new ResolveCheck(workspace).resolveAll();
+			report(workspace, options, switch (format(options)) {
+				case "json" -> Reports.json(report);
+				case "markdown" -> Reports.markdown(report);
+				default -> text(report);
+			});
+			if (!report.allResolve()) {
+				return NOT_FIXABLE;
+			}
+			return report.withStatus(BndrunResult.Status.CHANGED)
+				.isEmpty() ? OK : ACTIONABLE;
+		}
+	}
+
+	private static String text(ResolveReport report) {
+		StringBuilder text = new StringBuilder();
+		for (BndrunResult r : report.results()) {
+			text.append(String.format("%-70s %s%n", r.bndrun(), switch (r.status()) {
+				case UNCHANGED -> "unchanged";
+				case CHANGED -> "changed (+" + r.added()
+					.size() + " -" + r.removed()
+						.size()
+					+ ")";
+				case FAILED -> "DOES NOT RESOLVE";
+				case ERROR -> "ERROR " + r.message();
+			}));
+			r.unresolved()
+				.forEach(u -> text.append("    unresolved: ")
+					.append(u)
+					.append(System.lineSeparator()));
+		}
+		return text.length() == 0 ? "No bndrun.\n" : text.toString();
 	}
 
 	private static String text(List<Update> updates) {
@@ -265,16 +308,20 @@ public final class Main {
 			  bnd-update updates         [--workspace DIR] [--scope micro|minor|major] [--format text|json|markdown] [--output FILE]
 			  bnd-update vulnerabilities --trivy FILE [--sbom FILE] [--against-updates]
 			                             [--workspace DIR] [--scope micro|minor|major] [--format text|json|markdown] [--output FILE]
+			  bnd-update resolve         [--workspace DIR] [--format text|json|markdown] [--output FILE]
 
 			updates          newer versions of the libraries in the workspace's .mvn indexes,
 			                 the proposal is the highest version the version policy allows
 			vulnerabilities  for each library in a Trivy JSON report, the smallest available version
 			                 within the policy that fixes all its vulnerabilities; --sbom adds where
 			                 the library sits, --against-updates considers only the found updates
+			resolve          resolves every bndrun of the workspace (writes nothing) and compares the
+			                 result with the -runbundles in the files; lists unresolved requirements
 
 			--scope overrides the default scope of the workspace's -update-policy (default micro).
 
-			Exit codes: 0 nothing to do, 1 updates/fixes within the policy, 2 a vulnerability has no
-			fix within the policy, 64 usage error, 70 internal error.""");
+			Exit codes: 0 nothing to do, 1 updates/fixes within the policy (resolve: some -runbundles
+			change), 2 a vulnerability has no fix within the policy (resolve: a bndrun does not
+			resolve), 64 usage error, 70 internal error.""");
 	}
 }

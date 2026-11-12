@@ -20,10 +20,12 @@ Main-Class: org.gecko.bnd.update.cli.Main
 	@${repo;biz.aQute.bnd.util;latest}!/!META-INF/*,\
 	@${repo;biz.aQute.bndlib;latest}!/!META-INF/*,\
 	@${repo;biz.aQute.repository;latest}!/!META-INF/*,\
+	@${repo;biz.aQute.resolve;latest}!/!META-INF/*,\
 	@${repo;biz.aQute.bnd.embedded-repo;latest}!/!META-INF/*,\
 	@${repo;aQute.libg;latest}!/!META-INF/*,\
 	@${repo;osgi.core;latest}!/!META-INF/*,\
 	@${repo;org.osgi.service.repository;latest}!/!META-INF/*,\
+	@${repo;org.osgi.service.resolver;latest}!/!META-INF/*,\
 	@${repo;org.osgi.util.promise;latest}!/!META-INF/*,\
 	@${repo;org.osgi.util.function;latest}!/!META-INF/*,\
 	@${repo;org.osgi.service.coordinator;latest}!/!META-INF/*,\
@@ -35,6 +37,10 @@ Main-Class: org.gecko.bnd.update.cli.Main
 -testpath: \
 	assertj-core;version=latest
 
-# an application, not a bundle meant to be resolved in a framework
+# An application, not a bundle meant to be resolved in a framework. The inlined bnd classes
+# carry bundle annotations (@Export on their packages, @BndPlugin); evaluated, they make this
+# jar export bnd's packages and offer bnd's plugins, and a resolver in this workspace then
+# picks it as a provider (found by 'bnd-update resolve'). The headers are removed after the
+# analysis, so the jar offers nothing to a resolver.
+-removeheaders: Export-Package, Provide-Capability
 Import-Package: *;resolution:=optional
--exportcontents:
