@@ -1,0 +1,5 @@
+-runfw: org.apache.felix.framework;version='[7.0.5,7.0.5]'
+-runee: JavaSE-21
+-runbundles: slf4j.api;version='[2.0.17,2.0.18)'
+-plugin.sbom: org.gecko.bnd.sbom.SbomExporter
+-sbom: level=medium

@@ -8,3 +8,5 @@ bin_test/
 /cnf/cache
 # release artifacts collected for the Central Portal upload (cnf/ext/release.bnd)
 /dist/
+# Maven build output (maven-plugin/, examples/)
+target/
