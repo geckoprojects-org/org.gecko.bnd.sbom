@@ -529,9 +529,10 @@ together with the bundles, with `ci/publish-plugins.sh` right after bnd's releas
 The version is the workspace's `base-version` (`cnf/ext/fennec.bnd`), so the plugins, the
 library and the CLI of one build carry the same version, and the Gradle plugin runs the CLI of
 its own version by default. The Maven plugin is built against the `org.gecko.bnd.update` jar of
-the same build; the script refuses to run when that jar has another version. The Maven plugin is
-built with its Maven wrapper (`maven-plugin/mvnw`, checksum-pinned), the Gradle plugin with the
-workspace's Gradle wrapper: the agent needs only Java 21.
+the same build; the script refuses to run when that jar has another version. The script fetches
+Maven itself (pinned version, checked against its SHA-512, unpacked with `tar`, cached in
+`~/.cache/bnd-update`), the Gradle plugin is built with the workspace's Gradle wrapper: the
+agent needs only Java 21, curl and tar.
 
 The targets can be redirected for a trial (`NEXUS_SNAPSHOT_URL`, `NEXUS_RELEASE_URL`,
 `CENTRAL_SNAPSHOT_URL`, `DIST_DIR`), e.g. to local directories:

@@ -75,7 +75,23 @@ pom="$(find "$tmp/META-INF/maven" -path '*/org.gecko.bnd.update/pom.xml' | head 
 built="$(sed -n 's:^  <version>\(.*\)</version>:\1:p' "$pom" | head -1)"
 [ "$built" = "$VERSION" ] || die "$library was built as $built, the plugins would be $VERSION (DO_RELEASE differs between the bnd build and this script?)"
 
-mvn=(./mvnw -B -ntp -s "$ROOT/ci/maven-settings.xml" -Dmaven.repo.local="$MAVEN_REPO_LOCAL")
+# Maven itself, pinned: downloaded once, checked against its SHA-512, unpacked with tar (the
+# agent needs neither Maven nor unzip)
+MAVEN_VERSION=3.9.16
+MAVEN_SHA512=831a8591fe20c8243b1dbe7d71e3244f31d1665b0804b2e825e38cbbe5ce0cafb8338851f90780735568773e0a6cd07bbec107cda0b896b008b861075358b6f6
+maven_home="${MAVEN_CACHE:-$HOME/.cache/bnd-update}/apache-maven-$MAVEN_VERSION"
+if [ ! -x "$maven_home/bin/mvn" ]; then
+  log "Downloading Maven $MAVEN_VERSION"
+  archive="$tmp/apache-maven-$MAVEN_VERSION-bin.tar.gz"
+  curl -fsSL -o "$archive" "https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/$MAVEN_VERSION/apache-maven-$MAVEN_VERSION-bin.tar.gz"
+  echo "$MAVEN_SHA512  $archive" | sha512sum -c --strict --quiet - || die "checksum of the Maven distribution does not match"
+  mkdir -p "$(dirname "$maven_home")"
+  tar xzf "$archive" -C "$tmp"
+  rm -rf "$maven_home"
+  mv "$tmp/apache-maven-$MAVEN_VERSION" "$maven_home"
+fi
+
+mvn=("$maven_home/bin/mvn" -B -ntp -s "$ROOT/ci/maven-settings.xml" -Dmaven.repo.local="$MAVEN_REPO_LOCAL")
 (
   cd maven-plugin
   "${mvn[@]}" -q install:install-file -Dfile="$ROOT/$library" -DpomFile="$pom"
