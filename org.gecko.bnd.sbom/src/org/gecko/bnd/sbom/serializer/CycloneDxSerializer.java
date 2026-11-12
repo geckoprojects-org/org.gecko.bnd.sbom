@@ -22,6 +22,7 @@ import org.gecko.bnd.sbom.SbomConfig;
 import org.gecko.bnd.sbom.model.SbomComponent;
 import org.gecko.bnd.sbom.model.SbomLicense;
 import org.gecko.bnd.sbom.model.SbomModel;
+import org.gecko.bnd.sbom.model.SbomRefs;
 import aQute.bnd.osgi.EmbeddedResource;
 import aQute.bnd.osgi.Resource;
 import aQute.lib.json.JSONCodec;
@@ -51,16 +52,17 @@ public final class CycloneDxSerializer implements SbomSerializer {
 		bom.put("bomFormat", "CycloneDX");
 		bom.put("specVersion", SPEC_VERSION);
 		bom.put("version", 1);
-		bom.put("metadata", metadata(model, config));
+		SbomRefs refs = SbomRefs.of(model);
+		bom.put("metadata", metadata(model, config, refs));
 
 		List<Object> components = new ArrayList<>();
 		for (SbomComponent component : model.getComponents()) {
-			components.add(component(component));
+			components.add(component(component, refs));
 		}
 		bom.put("components", components);
 
 		// A2.5/Q4: completeness + declared "known unknowns".
-		bom.put("compositions", compositions(model));
+		bom.put("compositions", compositions(model, refs));
 
 		String json = CODEC.enc()
 			.indent("  ")
@@ -71,7 +73,7 @@ public final class CycloneDxSerializer implements SbomSerializer {
 			.toEpochMilli());
 	}
 
-	private Map<String, Object> metadata(SbomModel model, SbomConfig config) {
+	private Map<String, Object> metadata(SbomModel model, SbomConfig config, SbomRefs refs) {
 		Map<String, Object> metadata = new LinkedHashMap<>();
 		metadata.put("timestamp", config.created()
 			.toString());
@@ -84,14 +86,16 @@ public final class CycloneDxSerializer implements SbomSerializer {
 		metadata.put("tools", tools);
 
 		Map<String, Object> app = new LinkedHashMap<>();
+		app.put("bom-ref", refs.application());
 		app.put("type", "application");
 		app.put("name", model.getApplicationName());
 		metadata.put("component", app);
 		return metadata;
 	}
 
-	private Map<String, Object> component(SbomComponent component) {
+	private Map<String, Object> component(SbomComponent component, SbomRefs refs) {
 		Map<String, Object> node = new LinkedHashMap<>();
+		node.put("bom-ref", refs.of(component));
 		node.put("type", "library");
 		node.put("name", component.getBsn());
 		putIfPresent(node, "version", component.getVersion());
@@ -126,9 +130,11 @@ public final class CycloneDxSerializer implements SbomSerializer {
 		return node;
 	}
 
-	private List<Object> compositions(SbomModel model) {
+	private List<Object> compositions(SbomModel model, SbomRefs refs) {
 		Map<String, Object> composition = new LinkedHashMap<>();
 		composition.put("aggregate", model.isDependenciesComplete() ? "complete" : "incomplete");
+		// the statement is about the application's assembly: the components listed in this BOM
+		composition.put("assemblies", listOf(refs.application()));
 		if (!model.getKnownUnknowns()
 			.isEmpty()) {
 			List<Object> notes = new ArrayList<>();

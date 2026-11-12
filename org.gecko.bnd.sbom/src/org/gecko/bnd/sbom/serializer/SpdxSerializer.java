@@ -23,6 +23,7 @@ import org.gecko.bnd.sbom.SbomConfig;
 import org.gecko.bnd.sbom.model.SbomComponent;
 import org.gecko.bnd.sbom.model.SbomLicense;
 import org.gecko.bnd.sbom.model.SbomModel;
+import org.gecko.bnd.sbom.model.SbomRefs;
 import aQute.bnd.osgi.EmbeddedResource;
 import aQute.bnd.osgi.Resource;
 import aQute.lib.json.JSONCodec;
@@ -60,9 +61,9 @@ public final class SpdxSerializer implements SbomSerializer {
 		ExtractedLicenses extracted = new ExtractedLicenses();
 		List<Object> packages = new ArrayList<>();
 		List<Object> relationships = new ArrayList<>();
-		int index = 0;
+		SbomRefs refs = SbomRefs.of(model);
 		for (SbomComponent component : model.getComponents()) {
-			String spdxId = "SPDXRef-Package-" + index++;
+			String spdxId = refs.spdxOf(component);
 			packages.add(pkg(spdxId, component, extracted));
 			relationships.add(relationship(DOCUMENT_ID, "DESCRIBES", spdxId));
 		}
