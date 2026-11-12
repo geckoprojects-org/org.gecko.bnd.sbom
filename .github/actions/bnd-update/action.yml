@@ -87,10 +87,13 @@ runs:
           base="org/geckoprojects/bnd/org.gecko.bnd.update.cli/$CLI_VERSION"
           if [[ "$CLI_VERSION" == *-SNAPSHOT ]]; then
             repo="https://central.sonatype.com/repository/maven-snapshots"
-            value="$(curl -fsSL "$repo/$base/maven-metadata.xml" \
-              | tr -d ' \n' | grep -o '<extension>jar</extension><value>[^<]*' | head -1 | sed 's/.*<value>//')"
-            [ -n "$value" ] || { echo "::error::no jar for $CLI_VERSION in $repo"; exit 1; }
-            file="org.gecko.bnd.update.cli-$value.jar"
+            # the latest snapshot is named by <snapshot><timestamp> and <buildNumber>; the
+            # <snapshotVersion> list also holds older builds
+            meta="$(curl -fsSL "$repo/$base/maven-metadata.xml" | tr -d ' \n')"
+            ts="$(printf '%s' "$meta" | sed -n 's:.*<timestamp>\([^<]*\)</timestamp>.*:\1:p')"
+            bn="$(printf '%s' "$meta" | sed -n 's:.*<buildNumber>\([^<]*\)</buildNumber>.*:\1:p')"
+            [ -n "$ts" ] && [ -n "$bn" ] || { echo "::error::no snapshot of $CLI_VERSION in $repo"; exit 1; }
+            file="org.gecko.bnd.update.cli-${CLI_VERSION%-SNAPSHOT}-$ts-$bn.jar"
           else
             repo="https://repo.maven.apache.org/maven2"
             file="org.gecko.bnd.update.cli-$CLI_VERSION.jar"
