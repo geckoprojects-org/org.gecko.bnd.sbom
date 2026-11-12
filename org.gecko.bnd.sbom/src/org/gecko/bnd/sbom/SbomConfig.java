@@ -17,6 +17,7 @@ import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -64,13 +65,17 @@ public final class SbomConfig {
 	static final String			APP_NAME		= "application.name";
 	static final String			APP_GROUP		= "application.group";
 	static final String			APP_VERSION		= "application.version";
+	/** PURL of the application, e.g. of the image or executable built from the bndrun. */
+	static final String			APP_PURL		= "application.purl";
+	/** {@code property.<name>=<value>}: free properties of the BOM (commit, image reference). */
+	static final String			PROPERTY_PREFIX	= "property.";
 	/** {@code serialNumber} derived from the BOM's content (default). */
 	static final String			SERIAL_CONTENT	= "content";
 	/** {@code serialNumber} random per export. */
 	static final String			SERIAL_RANDOM	= "random";
 
 	private static final List<String>	KEYS	= List.of(LEVEL, FORMAT, INCLUDE_OSGI, TIMESTAMP, SERIAL_NUMBER, APP_NAME,
-		APP_GROUP, APP_VERSION, CYCLONEDX_VERSION);
+		APP_GROUP, APP_VERSION, APP_PURL, CYCLONEDX_VERSION);
 
 	private final SbomLevel		level;
 	private final SbomFormat	format;
@@ -81,10 +86,12 @@ public final class SbomConfig {
 	private final String		applicationGroup;
 	private final String		applicationVersion;
 	private final String		cyclonedxVersion;
+	private final String		applicationPurl;
+	private final Map<String, String>	properties;
 
 	private SbomConfig(SbomLevel level, SbomFormat format, boolean includeOSGIMetadata, Instant created,
 		boolean randomSerialNumber, String applicationName, String applicationGroup, String applicationVersion,
-		String cyclonedxVersion) {
+		String cyclonedxVersion, String applicationPurl, Map<String, String> properties) {
 		this.level = level;
 		this.format = format;
 		this.includeOSGIMetadata = includeOSGIMetadata;
@@ -95,6 +102,8 @@ public final class SbomConfig {
 		this.applicationGroup = applicationGroup;
 		this.applicationVersion = applicationVersion;
 		this.cyclonedxVersion = cyclonedxVersion;
+		this.applicationPurl = applicationPurl;
+		this.properties = Collections.unmodifiableMap(new LinkedHashMap<>(properties));
 	}
 
 	/**
@@ -105,7 +114,7 @@ public final class SbomConfig {
 	public static SbomConfig of(SbomLevel level, SbomFormat format, boolean includeOSGIMetadata, String timestamp) {
 		return new SbomConfig(level, format, includeOSGIMetadata,
 			timestamp != null ? Instant.parse(timestamp) : Instant.now(), false, null, null, null,
-			CYCLONEDX_VERSIONS.get(0));
+			CYCLONEDX_VERSIONS.get(0), null, Map.of());
 	}
 
 	public static SbomConfig from(Project project, Map<String, String> options) {
@@ -118,7 +127,18 @@ public final class SbomConfig {
 		if (options != null) {
 			values.putAll(options);
 		}
-		for (String key : values.keySet()) {
+		Map<String, String> properties = new LinkedHashMap<>();
+		for (Map.Entry<String, String> entry : values.entrySet()) {
+			String key = entry.getKey();
+			if (key.startsWith(PROPERTY_PREFIX)) {
+				String name = key.substring(PROPERTY_PREFIX.length());
+				if (name.isBlank()) {
+					reporter.error("SBOM option '%s' needs a property name, e.g. '%sgit:commit=...'", key, PROPERTY_PREFIX);
+				} else {
+					properties.put(name, entry.getValue());
+				}
+				continue;
+			}
 			if (!KEYS.contains(key)) {
 				reporter.warning("Unknown SBOM option '%s' (in %s or the export options) is ignored; known options: %s",
 					key, SBOM, String.join(", ", KEYS));
@@ -140,12 +160,17 @@ public final class SbomConfig {
 		String serialNumber = value(reporter, values, SERIAL_NUMBER, SERIAL_CONTENT, SbomConfig::parseSerialNumber,
 			Stream.of(SERIAL_CONTENT, SERIAL_RANDOM));
 
+		// a PURL must at least look like one; a wrong identity silently breaks matching
+		String applicationPurl = value(reporter, values, APP_PURL, null,
+			v -> v.startsWith("pkg:") && v.indexOf('/') > 4 ? Optional.of(v) : Optional.empty(),
+			Stream.of("a package URL such as pkg:oci/weather@sha256%3A..."));
+
 		String cyclonedxVersion = value(reporter, values, CYCLONEDX_VERSION, CYCLONEDX_VERSIONS.get(0),
 			v -> CYCLONEDX_VERSIONS.contains(v) ? Optional.of(v) : Optional.empty(), CYCLONEDX_VERSIONS.stream());
 
 		return new SbomConfig(level, format, includeOSGIMetadata, created != null ? created : Instant.now(),
 			SERIAL_RANDOM.equals(serialNumber), text(values, APP_NAME), text(values, APP_GROUP),
-			text(values, APP_VERSION), cyclonedxVersion);
+			text(values, APP_VERSION), cyclonedxVersion, applicationPurl, properties);
 	}
 
 	/**
@@ -238,6 +263,16 @@ public final class SbomConfig {
 		return randomSerialNumber;
 	}
 
+	/** {@code application.purl} from {@code -sbom} or the options, or {@code null}. */
+	public String applicationPurl() {
+		return applicationPurl;
+	}
+
+	/** The {@code property.<name>} entries by name, in the order given. */
+	public Map<String, String> properties() {
+		return properties;
+	}
+
 	/** CycloneDX specification version to write ({@code cyclonedx.version}), default 1.6. */
 	public String cyclonedxVersion() {
 		return cyclonedxVersion;
@@ -249,7 +284,7 @@ public final class SbomConfig {
 			throw new IllegalArgumentException("Unsupported CycloneDX version " + version + ", supported: " + CYCLONEDX_VERSIONS);
 		}
 		return new SbomConfig(level, format, includeOSGIMetadata, created, randomSerialNumber, applicationName,
-			applicationGroup, applicationVersion, version);
+			applicationGroup, applicationVersion, version, applicationPurl, properties);
 	}
 
 	/** {@code application.name} from {@code -sbom} or the options, or {@code null}. */
@@ -270,6 +305,6 @@ public final class SbomConfig {
 	/** A copy with a random serial number (for tests and the Maven/Gradle wrappers). */
 	public SbomConfig withRandomSerialNumber() {
 		return new SbomConfig(level, format, includeOSGIMetadata, created, true, applicationName, applicationGroup,
-			applicationVersion, cyclonedxVersion);
+			applicationVersion, cyclonedxVersion, applicationPurl, properties);
 	}
 }

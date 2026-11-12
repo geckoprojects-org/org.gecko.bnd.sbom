@@ -23,7 +23,7 @@ import java.util.Set;
  * (CycloneDX {@code bom-ref}, SPDX {@code SPDXID}).
  * <p>
  * A component is referenced by its PURL, or by {@code bsn@version} when it has no verified Maven
- * identity; the application by its name. The same model therefore always yields the same
+ * identity; the application by its PURL ({@code application.purl}) or else its name. The same model therefore always yields the same
  * references, which keeps BOMs of unchanged applications identical and diffs between builds
  * meaningful. Should two components still collide, the later ones get a {@code #2}, {@code #3},
  * … suffix in model order.
@@ -45,9 +45,11 @@ public final class SbomRefs {
 		Set<String> spdxUsed = new HashSet<>();
 		spdxUsed.add(SPDX_DOCUMENT);
 
+		// the application by its PURL when it has one, like the components; otherwise by name
 		String applicationName = model.getApplicationName() != null ? model.getApplicationName() : "application";
-		application = unique(applicationName, used, "#");
-		spdxApplication = unique(SPDX_PREFIX + spdxSafe(applicationName), spdxUsed, "-");
+		String applicationBase = model.getApplicationPurl() != null ? model.getApplicationPurl() : applicationName;
+		application = unique(applicationBase, used, "#");
+		spdxApplication = unique(SPDX_PREFIX + spdxSafe(applicationBase), spdxUsed, "-");
 
 		for (SbomComponent component : model.getComponents()) {
 			String base = base(component);

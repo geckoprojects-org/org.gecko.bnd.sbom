@@ -36,6 +36,8 @@ The SBOM is written to the project's `generated/` folder as `<name>.bndrun.cdx.j
 | `serialNumber` | `content` (derived from format, level, application and components: an unchanged application keeps its serial number), `random` | `content` |
 | `application.name`, `application.group`, `application.version` | identity of the application in the metadata | bndrun name, `-groupid`, `Bundle-Version` |
 | `cyclonedx.version` | `1.6`, `1.7` (written with the matching `$schema`) | `1.6` |
+| `application.purl` | PURL of the application, e.g. of the image built from the bndrun (`"pkg:oci/..."`, quoted); also its `bom-ref` | none |
+| `property.<name>` | free properties of the BOM, e.g. `property.vcs:commit=${env;GITHUB_SHA}`; CycloneDX `metadata.properties`, SPDX document comment | none |
 
 ### Configuration in the `.bndrun`
 

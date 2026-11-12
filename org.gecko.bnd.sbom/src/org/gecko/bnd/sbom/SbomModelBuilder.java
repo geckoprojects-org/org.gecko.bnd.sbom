@@ -70,10 +70,13 @@ public final class SbomModelBuilder {
 			.setApplicationName(firstOf(config.applicationName(), project.getName()))
 			.setApplicationGroup(firstOf(config.applicationGroup(), project.getProperty(Constants.GROUPID)))
 			.setApplicationVersion(firstOf(config.applicationVersion(), project.getProperty(Constants.BUNDLE_VERSION)))
+			.setApplicationPurl(config.applicationPurl())
 			.setVcsUrl(scmUrl(project.getProperty(Constants.BUNDLE_SCM)))
 			.setWebsiteUrl(firstOf(project.getProperty(Constants.BUNDLE_DOCURL)));
 		Tools.current()
 			.forEach(model::addTool);
+		config.properties()
+			.forEach(model::addProperty);
 
 		// View 2, A2.1: the resolved application bundles.
 		add(model, runbundles, null);
