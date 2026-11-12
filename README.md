@@ -151,9 +151,11 @@ For Jenkins (and GitLab CI) `ci/bnd-update.sh` does the same with plain bash, gi
 see [ci/jenkins/README.md](ci/jenkins/README.md). For Maven projects: the SBOM comes from
 `bnd-export-maven-plugin` with this exporter, the fixes from `bnd-update-maven-plugin`
 (goal `vulnerabilities`) — runnable in [examples/maven-sbom](examples/maven-sbom/README.md).
+For Gradle builds, the plugin `org.geckoprojects.bnd.update` adds the tasks `bndUpdates`,
+`bndVulnerabilities`, `bndResolveCheck` and `bndApply`.
 
 Exit codes (0 nothing to do, 1 fixes within the policy, 2 something needs a decision), the
-fix-version rules, library API, the action's inputs, CI examples for Jenkins, GitLab and GitHub,
+fix-version rules, library API, Maven and Gradle plugins, the action's inputs, CI examples for Jenkins, GitLab and GitHub,
 limits: [docs/bnd-update.md](docs/bnd-update.md).
 
 ## Maven scopes in bnd-generated POMs

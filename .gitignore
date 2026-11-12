@@ -10,3 +10,4 @@ bin_test/
 /dist/
 # Maven build output (maven-plugin/, examples/)
 target/
+/gradle-plugin/.gradle/

@@ -1,0 +1,3 @@
+// The bnd-update Gradle plugin: its own build, outside the bnd workspace (bnd_exclude in the
+// workspace's gradle.properties). Build with the workspace's wrapper: ./gradlew -p gradle-plugin build
+rootProject.name = 'bnd-update-gradle-plugin'
