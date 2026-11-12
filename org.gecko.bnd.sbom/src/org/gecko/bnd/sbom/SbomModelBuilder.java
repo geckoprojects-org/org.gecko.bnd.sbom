@@ -14,11 +14,14 @@
 package org.gecko.bnd.sbom;
 
 import java.io.File;
+import java.io.InputStream;
 import java.security.MessageDigest;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.jar.Manifest;
@@ -53,6 +56,8 @@ public final class SbomModelBuilder {
 	/** de-duplicates components that appear in more than one layer (bsn|version). */
 	private final Set<String>		seen			= new LinkedHashSet<>();
 	private Collection<Container>	runbundles		= Collections.emptyList();
+	/** analysis steps that failed, declared in the BOM */
+	private final List<String>					problems	= new ArrayList<>();
 	/** manifests of the components, for the dependency graph */
 	private final Map<SbomComponent, Manifest>	manifests	= new LinkedHashMap<>();
 
@@ -77,8 +82,9 @@ public final class SbomModelBuilder {
 			.setApplicationGroup(firstOf(config.applicationGroup(), project.getProperty(Constants.GROUPID)))
 			.setApplicationVersion(firstOf(config.applicationVersion(), project.getProperty(Constants.BUNDLE_VERSION)))
 			.setApplicationPurl(config.applicationPurl())
-			.setVcsUrl(scmUrl(project.getProperty(Constants.BUNDLE_SCM)))
-			.setWebsiteUrl(firstOf(project.getProperty(Constants.BUNDLE_DOCURL)));
+			// CWE-200: URLs are published without credentials, query or fragment
+			.setVcsUrl(Limits.publishableUrl(scmUrl(project.getProperty(Constants.BUNDLE_SCM))))
+			.setWebsiteUrl(Limits.publishableUrl(firstOf(project.getProperty(Constants.BUNDLE_DOCURL))));
 		Tools.current()
 			.forEach(model::addTool);
 		config.properties()
@@ -118,6 +124,9 @@ public final class SbomModelBuilder {
 		model.addKnownUnknown("The Java runtime is not part of this SBOM; packages the bundles take from it "
 			+ "(system packages, boot delegation) have no component and no dependency edge");
 		model.addKnownUnknown("DynamicImport-Package is not resolved");
+		graph.skipped()
+			.forEach(bsn -> problems.add("No dependency edges for " + bsn + ": its manifest could not be read"));
+		problems.forEach(model::addKnownUnknown);
 
 		return model;
 	}
@@ -144,7 +153,7 @@ public final class SbomModelBuilder {
 
 		// Q3: staged identity resolution → Maven coordinates + PURL; otherwise mark honestly as
 		// unverified.
-		MavenCoordinates maven = purlResolver.resolve(container);
+		MavenCoordinates maven = attempt(component, "identity", () -> purlResolver.resolve(container));
 		if (maven == null) {
 			// #9: coordinates configured for a bundle from p2/OBR that is also on Maven
 			maven = config.mavenMapping(container.getBundleSymbolicName(), container.getVersion());
@@ -160,7 +169,7 @@ public final class SbomModelBuilder {
 		}
 
 		// #9: where it came from
-		OriginResolver.Origin origin = originResolver.resolve(container);
+		OriginResolver.Origin origin = attempt(component, "origin", () -> originResolver.resolve(container));
 		if (origin != null) {
 			component.setRepositoryName(origin.repositoryName())
 				.setRepositoryKind(origin.kind())
@@ -170,12 +179,17 @@ public final class SbomModelBuilder {
 		// #8: libraries repackaged or embedded in the bundle
 		File jarFile = container.getFile();
 		if (jarFile != null && jarFile.isFile()) {
-			try (Jar jar = new Jar(jarFile)) {
-				// a bundle built in this workspace also shows what it inlined from its build path
-				Project producer = container.getType() == Container.TYPE.PROJECT ? container.getProject() : null;
-				embeddedResolver.resolve(jar, maven, config.level()
-					.includes(SbomLevel.MEDIUM), producer)
-					.forEach(component::addEmbedded);
+			MavenCoordinates own = maven;
+			List<SbomComponent> embedded = attempt(component, "embedded libraries", () -> {
+				try (Jar jar = new Jar(jarFile)) {
+					// a bundle built in this workspace also shows what it inlined from its build path
+					Project producer = container.getType() == Container.TYPE.PROJECT ? container.getProject() : null;
+					return embeddedResolver.resolve(jar, own, config.level()
+						.includes(SbomLevel.MEDIUM), producer);
+				}
+			});
+			if (embedded != null) {
+				embedded.forEach(component::addEmbedded);
 			}
 		}
 
@@ -187,8 +201,9 @@ public final class SbomModelBuilder {
 				component.setFilename(file.getName());
 				component.setSha512(sha512(file));
 			}
-			for (SbomLicense license : licenseResolver.resolve(container)) {
-				component.addLicense(license);
+			List<SbomLicense> licenses = attempt(component, "license", () -> licenseResolver.resolve(container));
+			if (licenses != null) {
+				licenses.forEach(component::addLicense);
 			}
 		}
 
@@ -218,8 +233,39 @@ public final class SbomModelBuilder {
 		}
 	}
 
+	/** One step of analysing a component, which may fail on what the artifact contains. */
+	@FunctionalInterface
+	private interface Step<T> {
+		T run() throws Exception;
+	}
+
+	/**
+	 * CWE-754: a broken jar, manifest or POM must not abort the whole export, nor be silently
+	 * skipped. The step's result is dropped, the component stays in the SBOM, and the failure is
+	 * reported as a bnd warning and as a known unknown of the BOM.
+	 */
+	private <T> T attempt(SbomComponent component, String what, Step<T> step) {
+		try {
+			return step.run();
+		} catch (Exception e) {
+			String message = "Could not determine the " + what + " of " + component.getBsn() + " "
+				+ component.getVersion() + ": " + e;
+			project.warning("%s", message);
+			problems.add(message);
+			return null;
+		}
+	}
+
+	/** Streamed, so a large bundle is never held in memory as a whole (CWE-400). */
 	private static String sha512(File file) throws Exception {
 		MessageDigest md = MessageDigest.getInstance("SHA-512");
-		return Hex.toHexString(md.digest(IO.read(file)));
+		try (InputStream in = IO.stream(file)) {
+			byte[] buffer = new byte[64 * 1024];
+			int n;
+			while ((n = in.read(buffer)) > 0) {
+				md.update(buffer, 0, n);
+			}
+		}
+		return Hex.toHexString(md.digest());
 	}
 }

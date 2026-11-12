@@ -19,3 +19,12 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: "build(deps)"
+
+  # Python packages of the SBOM schema validation (hash-pinned requirements).
+  - package-ecosystem: "pip"
+    directory: "/.github/python"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "build(deps)"

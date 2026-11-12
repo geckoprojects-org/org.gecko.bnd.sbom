@@ -98,6 +98,24 @@ A complete example:
   `osgi:repository:kind`: `maven`, `p2`, `osgi`, `file`, `workspace`) and, where the
   repository knows it, the download URL as `distribution` reference.
 
+## Security
+
+The exporter reads artifacts it does not control — bundles, embedded jars, manifests, POMs,
+license files, repository indexes. It is written to treat them as untrusted:
+
+- **Resource limits (CWE-400/409):** POMs and `pom.properties` are read up to 1 MiB, license
+  texts and `about.html` only their first 256 KiB, embedded jars up to 64 MiB and only their
+  metadata entries; an embedded jar that expands beyond 256 MiB is not analysed (zip bomb).
+  Hashes are computed while streaming.
+- **XML (CWE-611/776):** POMs are parsed without DTDs, external entities or external access.
+- **Published URLs (CWE-200):** download, VCS and website URLs lose user info, query and
+  fragment before they go into the SBOM, so a `user:token@` in a repository URL is not
+  published.
+- **Broken input (CWE-754):** a component whose jar, manifest or POM cannot be read stays in
+  the SBOM; the failure is a bnd warning and a known unknown in the BOM.
+- **CI:** CodeQL (`security-extended`) runs on every pull request and weekly; the Gradle wrapper
+  and the Python packages of the schema check are verified by SHA-256.
+
 ## Build
 
 Requires Java 21. The workspace uses bnd 7.4.0 and Gradle 9 (wrapper included).

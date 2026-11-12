@@ -61,6 +61,7 @@ import aQute.bnd.version.Version;
 public final class DependencyGraph {
 
 	private final Map<SbomComponent, Resource>	resources	= new LinkedHashMap<>();
+	private final List<String>					skipped		= new ArrayList<>();
 
 	/**
 	 * @param manifests the components of the application with their manifests; components
@@ -71,11 +72,23 @@ public final class DependencyGraph {
 			if (entry.getValue() == null) {
 				continue;
 			}
-			ResourceBuilder builder = new ResourceBuilder();
-			if (builder.addManifest(Domain.domain(entry.getValue()))) {
-				resources.put(entry.getKey(), builder.build());
+			// CWE-754: a manifest the resource builder cannot read costs that component its edges,
+			// not the export
+			try {
+				ResourceBuilder builder = new ResourceBuilder();
+				if (builder.addManifest(Domain.domain(entry.getValue()))) {
+					resources.put(entry.getKey(), builder.build());
+				}
+			} catch (RuntimeException e) {
+				skipped.add(entry.getKey()
+					.getBsn());
 			}
 		}
+	}
+
+	/** Symbolic names of the components whose manifest could not be read. */
+	public List<String> skipped() {
+		return skipped;
 	}
 
 	/** For each component the components it depends on, in model order. */

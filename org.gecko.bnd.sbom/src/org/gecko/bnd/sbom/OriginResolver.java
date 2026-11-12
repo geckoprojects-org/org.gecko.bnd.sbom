@@ -137,14 +137,14 @@ public final class OriginResolver {
 		return null;
 	}
 
+	/**
+	 * The first URL of a location, as it may be published: http(s) only, without user info,
+	 * query and fragment (CWE-200: a repository URL may carry {@code user:token@}).
+	 */
 	private static String httpOrNull(String location) {
 		if (location == null) {
 			return null;
 		}
-		// a location may list several URLs; the first is the one tried first
-		String trimmed = location.split(",")[0]
-			.trim();
-		String lower = trimmed.toLowerCase(Locale.ROOT);
-		return lower.startsWith("https://") || lower.startsWith("http://") ? trimmed : null;
+		return Limits.publishableUrl(location.split(",")[0]);
 	}
 }

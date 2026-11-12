@@ -15,13 +15,16 @@ package org.gecko.bnd.sbom;
 
 import java.io.ByteArrayInputStream;
 import java.io.File;
+import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
@@ -29,6 +32,8 @@ import java.util.TreeSet;
 import java.util.jar.Manifest;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 import org.gecko.bnd.sbom.model.MavenCoordinates;
 import org.gecko.bnd.sbom.model.SbomComponent;
@@ -40,6 +45,7 @@ import aQute.bnd.header.Attrs;
 import aQute.bnd.header.Parameters;
 import aQute.bnd.osgi.Constants;
 import aQute.bnd.osgi.Domain;
+import aQute.bnd.osgi.EmbeddedResource;
 import aQute.bnd.osgi.Jar;
 import aQute.bnd.osgi.Resource;
 import aQute.lib.hex.Hex;
@@ -253,13 +259,46 @@ public final class EmbeddedResolver {
 
 	private SbomComponent nestedJar(String path, Resource resource, Set<String> seen, boolean withDetails)
 		throws Exception {
+		// CWE-400/409: the embedded jar is read with a cap, and of its entries only the few that
+		// identify it are kept in memory, each capped as well; the total decompressed size is
+		// bounded too, so a zip bomb neither fills the heap nor keeps the build busy.
+		MessageDigest digest = MessageDigest.getInstance("SHA-512");
 		byte[] bytes;
-		try (InputStream in = resource.openInputStream()) {
-			bytes = IO.read(in);
+		try (InputStream in = new DigestInputStream(resource.openInputStream(), digest)) {
+			bytes = Limits.read(in, Limits.EMBEDDED_JAR);
 		}
+		if (bytes == null) {
+			return unanalysed(path, "larger than " + Limits.EMBEDDED_JAR / (1024 * 1024) + " MiB, not analysed");
+		}
+		Jar metadata = new Jar(path);
+		try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(bytes))) {
+			long total = 0;
+			ZipEntry entry;
+			while ((entry = zip.getNextEntry()) != null) {
+				String name = entry.getName();
+				if (entry.isDirectory() || !isMetadata(name)) {
+					total += zip.skip(Long.MAX_VALUE);
+				} else {
+					byte[] content = Limits.read(zip, Limits.METADATA);
+					if (content == null) {
+						continue; // an oversized metadata entry is ignored
+					}
+					total += content.length;
+					metadata.putResource(name, new EmbeddedResource(content, 0L));
+				}
+				if (total > MAX_DECOMPRESSED) {
+					metadata.close();
+					return unanalysed(path, "expands beyond " + MAX_DECOMPRESSED / (1024 * 1024) + " MiB, not analysed");
+				}
+			}
+		} catch (IOException e) {
+			metadata.close();
+			return unanalysed(path, "not a readable jar");
+		}
+
 		MavenCoordinates coordinates = null;
 		List<SbomLicense> licenses = List.of();
-		try (Jar nested = new Jar(path, new ByteArrayInputStream(bytes))) {
+		try (Jar nested = metadata) {
 			for (Map.Entry<String, Resource> entry : nested.getResources()
 				.entrySet()) {
 				if (POM_PROPERTIES.matcher(entry.getKey())
@@ -288,11 +327,37 @@ public final class EmbeddedResolver {
 		}
 		if (withDetails) {
 			component.setFilename(path.substring(path.lastIndexOf('/') + 1));
-			component.setSha512(Hex.toHexString(MessageDigest.getInstance("SHA-512")
-				.digest(bytes)));
+			component.setSha512(Hex.toHexString(digest.digest()));
 			licenses.forEach(component::addLicense);
 		}
 		return component;
+	}
+
+	/** Upper bound of what an embedded jar may expand to while it is scanned. */
+	static final long MAX_DECOMPRESSED = 4L * Limits.EMBEDDED_JAR;
+
+	/**
+	 * Entries of an embedded jar that identify it or state its license: the manifest, Maven
+	 * metadata, about.html, and LICENSE/COPYING files at the top level or directly in META-INF.
+	 */
+	private static boolean isMetadata(String name) {
+		if (name.equals("META-INF/MANIFEST.MF") || name.equals("about.html") || POM_PROPERTIES.matcher(name)
+			.matches() || name.contains("META-INF/maven/") && name.endsWith("/pom.xml")) {
+			return true;
+		}
+		String base = name.substring(name.lastIndexOf('/') + 1)
+			.toLowerCase(Locale.ROOT);
+		boolean licenseName = base.startsWith("license") || base.startsWith("copying");
+		boolean topLevel = name.indexOf('/') < 0;
+		boolean inMetaInf = name.startsWith("META-INF/") && name.indexOf('/', "META-INF/".length()) < 0;
+		return licenseName && (topLevel || inMetaInf);
+	}
+
+	/** An embedded jar that is kept by its path only, with the reason. */
+	private static SbomComponent unanalysed(String path, String reason) {
+		return new SbomComponent().setBsn(path.substring(path.lastIndexOf('/') + 1))
+			.setEmbeddedPath(path + " (" + reason + ")")
+			.setUnverifiedIdentity(true);
 	}
 
 	private static SbomComponent library(MavenCoordinates coordinates, String path) {
@@ -304,7 +369,12 @@ public final class EmbeddedResolver {
 	private static MavenCoordinates coordinates(Resource resource) throws Exception {
 		Properties properties = new Properties();
 		try (InputStream in = resource.openInputStream()) {
-			properties.load(in);
+			// CWE-400: pom.properties is a few lines; a huge one is ignored
+			byte[] bytes = Limits.read(in, Limits.METADATA);
+			if (bytes == null) {
+				return null;
+			}
+			properties.load(new ByteArrayInputStream(bytes));
 		}
 		String version = properties.getProperty("version");
 		if (version != null && version.contains("${")) {
