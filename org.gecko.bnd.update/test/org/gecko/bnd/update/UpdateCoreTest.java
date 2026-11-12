@@ -207,4 +207,33 @@ public class UpdateCoreTest {
 			List.of(new Vulnerability("CVE-G", "HIGH", List.of("33.7.2"), null)),
 			versions("33.7.2-android", "33.7.2-jre"), Scope.MINOR)).contains(v("33.7.2-jre"));
 	}
+
+	@Test
+	public void runbundlesAreComparedWithoutQuotes() {
+		assertThat(ResolveCheck.clauses("org.apache.felix.scr;version='[2.2.6,2.2.7)',"
+			+ "io.minio;version=snapshot," + "slf4j.api;version=\"[2.0.17, 2.0.18)\""))
+				.containsExactly("org.apache.felix.scr;version=[2.2.6,2.2.7)", "io.minio;version=snapshot",
+					"slf4j.api;version=[2.0.17,2.0.18)");
+		assertThat(ResolveCheck.clauses(null)).isEmpty();
+	}
+
+	@Test
+	public void resolveReport() throws Exception {
+		BndrunResult unchanged = new BndrunResult("a/x.bndrun", BndrunResult.Status.UNCHANGED, List.of("a;version=1"),
+			List.of("a;version=1"), List.of(), List.of(), List.of(), null);
+		BndrunResult changed = new BndrunResult("a/y.bndrun", BndrunResult.Status.CHANGED,
+			List.of("g;version=[33.5.0,33.5.1)"), List.of("g;version=[33.6.0,33.6.1)"),
+			List.of("g;version=[33.6.0,33.6.1)"), List.of("g;version=[33.5.0,33.5.1)"), List.of(), null);
+		BndrunResult failed = new BndrunResult("a/z.bndrun", BndrunResult.Status.FAILED, List.of(), List.of(), List.of(),
+			List.of(), List.of("aQute.libg 7.4.0 -> osgi.wiring.package: org.slf4j; version=[2.0.0,3.0.0)"), "failed");
+		ResolveReport report = new ResolveReport(List.of(unchanged, changed, failed));
+
+		assertThat(report.allResolve()).isFalse();
+		assertThat(new ResolveReport(List.of(unchanged, changed)).allResolve()).isTrue();
+		assertThat(Reports.markdown(report)).contains("**Not every bndrun resolves.**")
+			.contains("- removed `g;version=[33.5.0,33.5.1)`")
+			.contains("- added `g;version=[33.6.0,33.6.1)`")
+			.contains("- `aQute.libg 7.4.0 -> osgi.wiring.package: org.slf4j; version=[2.0.0,3.0.0)`");
+		assertThat(Reports.json(report)).contains("\"allResolve\":false");
+	}
 }

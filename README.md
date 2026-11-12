@@ -118,13 +118,14 @@ license files, repository indexes. It is written to treat them as untrusted:
 
 ## bnd update: newer versions and vulnerability fixes
 
-`org.gecko.bnd.update` (library) and `org.gecko.bnd.update.cli` (executable jar) answer two
+`org.gecko.bnd.update` (library) and `org.gecko.bnd.update.cli` (executable jar) answer three
 questions for a bnd workspace — reading only, they change no file:
 
 | Command | Question | Proposal |
 |---|---|---|
 | `updates` | Which libraries in the `.mvn` indexes have newer versions? | the highest version the version policy allows |
 | `vulnerabilities --trivy FILE [--sbom FILE]` | Which vulnerable libraries (Trivy report) can be fixed with what the repositories offer? | the smallest allowed version that fixes all of the library's vulnerabilities |
+| `resolve` | Does every bndrun still resolve — and to what? | per bndrun: unchanged, changed (bundles added/removed) or the unresolved requirements |
 
 ```
 java -jar org.gecko.bnd.update.cli.jar updates --format markdown
@@ -139,7 +140,8 @@ where configured, per library if needed; variants such as guava `-jre`/`-android
 ```
 
 **After any update** of a `.mvn` index or a `-buildpath` version — by tool, Bndtools or hand —
-**resolve every bndrun** (`./gradlew resolve`) before committing: narrow import ranges can make a
+**resolve every bndrun** before committing — check with `bnd-update resolve`, write with
+`./gradlew resolve`: narrow import ranges can make a
 bndrun unresolvable, and an update can change what other bndruns resolve to.
 
 Exit codes (0 nothing to do, 1 fixes within the policy, 2 something needs a decision), the
