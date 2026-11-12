@@ -73,6 +73,15 @@ public final class SpdxSerializer implements SbomSerializer {
 			packages.add(pkg(spdxId, component, extracted));
 			relationships.add(relationship(refs.spdxApplication(), "CONTAINS", spdxId));
 		}
+		// #13: the dependency graph
+		for (SbomComponent target : model.getApplicationDependencies()) {
+			relationships.add(relationship(refs.spdxApplication(), "DEPENDS_ON", refs.spdxOf(target)));
+		}
+		for (SbomComponent component : model.getComponents()) {
+			for (SbomComponent target : model.getDependencies(component)) {
+				relationships.add(relationship(refs.spdxOf(component), "DEPENDS_ON", refs.spdxOf(target)));
+			}
+		}
 
 		Map<String, Object> doc = new LinkedHashMap<>();
 		doc.put("spdxVersion", SPDX_VERSION);

@@ -18,8 +18,12 @@ Export-Package: \
 	osgi.core;version=latest,\
 	slf4j.api;version=latest
 
+# bndlib's ResourceBuilder needs these at runtime; bnd itself carries them, the test JVM does not
 -testpath: \
-	assertj-core;version=latest
+	assertj-core;version=latest,\
+	org.osgi.service.repository;version=latest,\
+	org.osgi.util.function;version=latest,\
+	org.osgi.util.promise;version=latest
 
 # The exporter's own identity for the SBOM's metadata.tools (see org.gecko.bnd.sbom.Tools).
 -includeresource.tool: \

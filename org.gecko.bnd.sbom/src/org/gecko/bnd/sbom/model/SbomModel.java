@@ -14,7 +14,11 @@
 package org.gecko.bnd.sbom.model;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Format-neutral SBOM root model of the resolved application (View 2). Populated by an
@@ -30,6 +34,13 @@ public final class SbomModel {
 	private String						vcsUrl;
 	/** Website of the application (CycloneDX {@code website}, SPDX {@code homepage}). */
 	private String						websiteUrl;
+	/**
+	 * Dependency graph (#13): for each component the components it depends on; {@code null}
+	 * when no graph was computed.
+	 */
+	private Map<SbomComponent, Set<SbomComponent>>	dependencies;
+	/** The components the application itself depends on. */
+	private final Set<SbomComponent>			applicationDependencies	= new LinkedHashSet<>();
 	/** The tools that write this SBOM. */
 	private final List<SbomTool>		tools			= new ArrayList<>();
 	private final List<SbomComponent>	components		= new ArrayList<>();
@@ -93,6 +104,43 @@ public final class SbomModel {
 	public SbomModel addTool(SbomTool tool) {
 		tools.add(tool);
 		return this;
+	}
+
+	/** {@code true} when a dependency graph was computed and should be written. */
+	public boolean hasDependencyGraph() {
+		return dependencies != null;
+	}
+
+	/** The components {@code component} depends on (empty without a graph). */
+	public Set<SbomComponent> getDependencies(SbomComponent component) {
+		if (dependencies == null) {
+			return Set.of();
+		}
+		return dependencies.getOrDefault(component, Set.of());
+	}
+
+	public Set<SbomComponent> getApplicationDependencies() {
+		return applicationDependencies;
+	}
+
+	/** Records that {@code from} depends on {@code to}; starts the graph if there is none. */
+	public SbomModel addDependency(SbomComponent from, SbomComponent to) {
+		dependencyGraph().computeIfAbsent(from, c -> new LinkedHashSet<>())
+			.add(to);
+		return this;
+	}
+
+	public SbomModel addApplicationDependency(SbomComponent to) {
+		dependencyGraph();
+		applicationDependencies.add(to);
+		return this;
+	}
+
+	private Map<SbomComponent, Set<SbomComponent>> dependencyGraph() {
+		if (dependencies == null) {
+			dependencies = new LinkedHashMap<>();
+		}
+		return dependencies;
 	}
 
 	public List<SbomComponent> getComponents() {

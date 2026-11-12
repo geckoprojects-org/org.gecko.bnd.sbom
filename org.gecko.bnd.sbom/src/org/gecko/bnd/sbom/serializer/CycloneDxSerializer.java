@@ -71,6 +71,11 @@ public final class CycloneDxSerializer implements SbomSerializer {
 		}
 		bom.put("components", components);
 
+		// #13: the dependency graph — every component, so that "no dependencies" is stated too
+		if (model.hasDependencyGraph()) {
+			bom.put("dependencies", dependencies(model, refs));
+		}
+
 		// A2.5/Q4: completeness + declared "known unknowns".
 		bom.put("compositions", compositions(model, refs));
 
@@ -135,6 +140,26 @@ public final class CycloneDxSerializer implements SbomSerializer {
 			result.add(node);
 		}
 		return result;
+	}
+
+	private static List<Object> dependencies(SbomModel model, SbomRefs refs) {
+		List<Object> result = new ArrayList<>();
+		result.add(dependency(refs.application(), model.getApplicationDependencies(), refs));
+		for (SbomComponent component : model.getComponents()) {
+			result.add(dependency(refs.of(component), model.getDependencies(component), refs));
+		}
+		return result;
+	}
+
+	private static Map<String, Object> dependency(String ref, Iterable<SbomComponent> dependsOn, SbomRefs refs) {
+		Map<String, Object> node = new LinkedHashMap<>();
+		node.put("ref", ref);
+		List<Object> targets = new ArrayList<>();
+		for (SbomComponent target : dependsOn) {
+			targets.add(refs.of(target));
+		}
+		node.put("dependsOn", targets);
+		return node;
 	}
 
 	private static Map<String, Object> reference(String type, String url) {

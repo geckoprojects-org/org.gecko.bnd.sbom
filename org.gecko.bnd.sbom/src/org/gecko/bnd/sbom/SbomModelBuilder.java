@@ -17,8 +17,11 @@ import java.io.File;
 import java.security.MessageDigest;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.Set;
+import java.util.jar.Manifest;
 
 import aQute.bnd.build.Container;
 import aQute.bnd.build.Project;
@@ -46,6 +49,8 @@ public final class SbomModelBuilder {
 	/** de-duplicates components that appear in more than one layer (bsn|version). */
 	private final Set<String>		seen			= new LinkedHashSet<>();
 	private Collection<Container>	runbundles		= Collections.emptyList();
+	/** manifests of the components, for the dependency graph */
+	private final Map<SbomComponent, Manifest>	manifests	= new LinkedHashMap<>();
 
 	public SbomModelBuilder(Project project, SbomConfig config) {
 		this.project = project;
@@ -79,6 +84,18 @@ public final class SbomModelBuilder {
 		add(model, project.getRunFw(), Category.FRAMEWORK);
 		add(model, project.getRunpath(), Category.FRAMEWORK);
 
+		// #13: who depends on whom, from the manifests of the resolved set
+		DependencyGraph graph = new DependencyGraph(manifests);
+		graph.edges()
+			.forEach((from, to) -> to.forEach(target -> model.addDependency(from, target)));
+		graph.roots(project.getProperty(Constants.RUNREQUIRES))
+			.forEach(model::addApplicationDependency);
+		for (SbomComponent component : model.getComponents()) {
+			if (component.getCategory() == Category.FRAMEWORK) {
+				model.addApplicationDependency(component);
+			}
+		}
+
 		// A2.5/Q4: system packages, boot delegation and DynamicImport-Package are out of the
 		// current scope and are declared as gaps rather than silently omitted.
 		model.setDependenciesComplete(false);
@@ -95,7 +112,9 @@ public final class SbomModelBuilder {
 		for (Container container : containers) {
 			String key = container.getBundleSymbolicName() + "|" + container.getVersion();
 			if (seen.add(key)) {
-				model.addComponent(toComponent(container, category));
+				SbomComponent component = toComponent(container, category);
+				model.addComponent(component);
+				manifests.put(component, container.getManifest());
 			}
 		}
 	}
