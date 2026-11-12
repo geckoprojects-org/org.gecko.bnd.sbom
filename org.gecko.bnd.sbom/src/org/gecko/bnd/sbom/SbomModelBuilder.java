@@ -27,6 +27,7 @@ import aQute.bnd.build.Container;
 import aQute.bnd.build.Project;
 import aQute.bnd.header.OSGiHeader;
 import aQute.bnd.osgi.Constants;
+import aQute.bnd.osgi.Jar;
 import org.gecko.bnd.sbom.model.MavenCoordinates;
 import org.gecko.bnd.sbom.model.SbomComponent;
 import org.gecko.bnd.sbom.model.SbomComponent.Category;
@@ -46,6 +47,8 @@ public final class SbomModelBuilder {
 	private final SbomConfig		config;
 	private final PurlResolver		purlResolver;
 	private final LicenseResolver	licenseResolver	= new LicenseResolver();
+	private final EmbeddedResolver	embeddedResolver;
+	private final OriginResolver	originResolver;
 	/** de-duplicates components that appear in more than one layer (bsn|version). */
 	private final Set<String>		seen			= new LinkedHashSet<>();
 	private Collection<Container>	runbundles		= Collections.emptyList();
@@ -56,6 +59,8 @@ public final class SbomModelBuilder {
 		this.project = project;
 		this.config = config;
 		this.purlResolver = new PurlResolver(project);
+		this.originResolver = new OriginResolver(project.getRepositories());
+		this.embeddedResolver = new EmbeddedResolver(purlResolver);
 	}
 
 	public SbomModelBuilder withRunbundles(Collection<Container> runbundles) {
@@ -91,6 +96,12 @@ public final class SbomModelBuilder {
 		DependencyGraph graph = new DependencyGraph(manifests);
 		graph.edges()
 			.forEach((from, to) -> to.forEach(target -> model.addDependency(from, target)));
+		// #8: a bundle depends on the libraries it embeds
+		for (SbomComponent component : model.getComponents()) {
+			for (SbomComponent embedded : component.getEmbedded()) {
+				model.addDependency(component, embedded);
+			}
+		}
 		graph.roots(project.getProperty(Constants.RUNREQUIRES))
 			.forEach(model::addApplicationDependency);
 		for (SbomComponent component : model.getComponents()) {
@@ -130,11 +141,38 @@ public final class SbomModelBuilder {
 		// Q3: staged identity resolution → Maven coordinates + PURL; otherwise mark honestly as
 		// unverified.
 		MavenCoordinates maven = purlResolver.resolve(container);
+		if (maven == null) {
+			// #9: coordinates configured for a bundle from p2/OBR that is also on Maven
+			maven = config.mavenMapping(container.getBundleSymbolicName(), container.getVersion());
+			if (maven != null) {
+				component.setIdentitySource("configured");
+			}
+		}
 		if (maven != null) {
 			component.setMaven(maven)
 				.setPurl(Purl.maven(maven));
 		} else {
 			component.setUnverifiedIdentity(true);
+		}
+
+		// #9: where it came from
+		OriginResolver.Origin origin = originResolver.resolve(container);
+		if (origin != null) {
+			component.setRepositoryName(origin.repositoryName())
+				.setRepositoryKind(origin.kind())
+				.setDistributionUrl(origin.distributionUrl());
+		}
+
+		// #8: libraries repackaged or embedded in the bundle
+		File jarFile = container.getFile();
+		if (jarFile != null && jarFile.isFile()) {
+			try (Jar jar = new Jar(jarFile)) {
+				// a bundle built in this workspace also shows what it inlined from its build path
+				Project producer = container.getType() == Container.TYPE.PROJECT ? container.getProject() : null;
+				embeddedResolver.resolve(jar, maven, config.level()
+					.includes(SbomLevel.MEDIUM), producer)
+					.forEach(component::addEmbedded);
+			}
 		}
 
 		// medium+: hash + filename + license (BSI-driven, see §7).

@@ -165,6 +165,25 @@ public final class SbomModel {
 		return dependencies;
 	}
 
+	/**
+	 * All components including the ones embedded in bundles (#8), each followed by its embedded
+	 * ones, in model order.
+	 */
+	public List<SbomComponent> getAllComponents() {
+		List<SbomComponent> all = new ArrayList<>();
+		for (SbomComponent component : components) {
+			collect(component, all);
+		}
+		return all;
+	}
+
+	private static void collect(SbomComponent component, List<SbomComponent> all) {
+		all.add(component);
+		for (SbomComponent embedded : component.getEmbedded()) {
+			collect(embedded, all);
+		}
+	}
+
 	public List<SbomComponent> getComponents() {
 		return components;
 	}

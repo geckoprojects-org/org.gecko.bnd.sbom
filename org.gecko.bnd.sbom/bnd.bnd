@@ -14,6 +14,7 @@ Export-Package: \
 	biz.aQute.bndlib;version=latest,\
 	biz.aQute.bnd.util;version=latest,\
 	biz.aQute.bnd.annotation;version=latest,\
+	org.osgi.service.repository;version=latest,\
 	aQute.libg;version=latest,\
 	osgi.core;version=latest,\
 	slf4j.api;version=latest
