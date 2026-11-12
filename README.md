@@ -6,7 +6,7 @@ application** of a `.bndrun`: the resolved `-runbundles` plus the framework laye
 
 | | |
 |---|---|
-| Maven coordinates | `org.geckoprojects.bnd.sbom:org.gecko.bnd.sbom` |
+| Maven coordinates | `org.geckoprojects.bnd:org.gecko.bnd.sbom` |
 | Export type | `bnd.sbom` |
 | Plugin class | `org.gecko.bnd.sbom.SbomExporter` |
 
