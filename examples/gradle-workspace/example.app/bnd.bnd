@@ -1,0 +1,8 @@
+# A small application bundle: logs through slf4j when it starts.
+
+Bundle-Activator: org.example.app.Activator
+
+-buildpath: \
+	osgi.core;maven-scope=provided,\
+	org.osgi.annotation.bundle;maven-scope=provided,\
+	slf4j.api

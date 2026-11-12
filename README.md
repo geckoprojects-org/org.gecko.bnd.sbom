@@ -152,6 +152,7 @@ see [ci/jenkins/README.md](ci/jenkins/README.md) and, for GitLab CI with a ready
 [ci/gitlab/README.md](ci/gitlab/README.md). For Maven projects: the SBOM comes from
 `bnd-export-maven-plugin` with this exporter, the fixes from `bnd-update-maven-plugin`
 (goal `vulnerabilities`) — runnable in [examples/maven-sbom](examples/maven-sbom/README.md).
+**Examples** for Gradle, Maven and Jenkins, with SBOM, Trivy and fixes: [examples/](examples/README.md).
 For Gradle builds, the plugin `org.geckoprojects.bnd.update` adds the tasks `bndUpdates`,
 `bndVulnerabilities`, `bndResolveCheck` and `bndApply`.
 

@@ -22,6 +22,8 @@
 		<gecko.bnd.version>0.1.0-SNAPSHOT</gecko.bnd.version>
 		<!-- the Trivy report of the SBOM; CI passes trivy-sample.json -->
 		<bnd-update.trivy>${project.basedir}/trivy.json</bnd-update.trivy>
+		<!-- none, unfixable or vulnerable; the Jenkinsfile passes unfixable -->
+		<bnd-update.failOn>none</bnd-update.failOn>
 	</properties>
 
 	<!-- only for the -SNAPSHOT versions of org.gecko.bnd.sbom and bnd-update-maven-plugin -->
@@ -95,7 +97,7 @@
 					<trivyReport>${bnd-update.trivy}</trivyReport>
 					<sbom>${project.build.directory}/app.bndrun.cdx.json</sbom>
 					<scope>micro</scope>
-					<failOn>none</failOn>
+					<failOn>${bnd-update.failOn}</failOn>
 				</configuration>
 				<executions>
 					<execution>

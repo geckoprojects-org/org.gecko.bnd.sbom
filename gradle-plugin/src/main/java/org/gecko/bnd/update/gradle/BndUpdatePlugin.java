@@ -105,10 +105,14 @@ public class BndUpdatePlugin implements Plugin<Project> {
 					.set(extension.getOnly());
 				t.getBuildCommand()
 					.set(extension.getBuildCommand());
-				t.getTrivyReport()
-					.set(extension.getTrivyReport());
-				t.getSbom()
-					.set(extension.getSbom());
+				// only the commands that read them: an input a task does not use would still make
+				// Gradle demand an ordering with whatever task writes it
+				if (command.equals("vulnerabilities") || command.equals("apply")) {
+					t.getTrivyReport()
+						.set(extension.getTrivyReport());
+					t.getSbom()
+						.set(extension.getSbom());
+				}
 				t.getFormat()
 					.set(extension.getFormat());
 				t.getFailOnFindings()

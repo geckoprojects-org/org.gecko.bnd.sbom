@@ -1,0 +1,20 @@
+// Example: a bnd workspace built with Gradle, with the SBOM exporter and the bnd update plugin.
+// See README.md.
+pluginManagement {
+    repositories {
+        mavenCentral()
+        // only for -SNAPSHOT versions of the bnd update plugin
+        maven { url = 'https://central.sonatype.com/repository/maven-snapshots/' }
+        gradlePluginPortal()
+    }
+    // CI of org.gecko.bnd.sbom: the Gradle plugin of the same commit (-PlocalPlugins=true)
+    if (providers.gradleProperty('localPlugins').getOrElse('false') == 'true') {
+        includeBuild('../../gradle-plugin')
+    }
+}
+
+plugins {
+    id 'biz.aQute.bnd.workspace' version '7.4.0'
+}
+
+rootProject.name = 'gradle-workspace-example'

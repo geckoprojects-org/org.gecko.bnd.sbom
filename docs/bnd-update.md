@@ -425,7 +425,9 @@ with `DRY_RUN=true` it shows what it would push and request. It needs bash, git,
 no jq or Python.
 
 For Jenkins: [ci/jenkins/README.md](../ci/jenkins/README.md) and the pipeline
-`ci/jenkins/Jenkinsfile.example` (weekly cron on the main branch, credentials, pinned script).
+`ci/jenkins/Jenkinsfile.example` (weekly cron on the main branch, credentials, pinned script). A complete pipeline for a Gradle workspace (build, SBOM, Trivy, fixes, weekly update
+pull request) is [examples/gradle-workspace/Jenkinsfile](../examples/gradle-workspace/Jenkinsfile),
+one for Maven [examples/maven-sbom/Jenkinsfile](../examples/maven-sbom/Jenkinsfile).
 
 For GitLab CI: [ci/gitlab/README.md](../ci/gitlab/README.md) and the template
 `ci/gitlab/bnd-update.gitlab-ci.yml`. It has a hidden job `.bnd-update` for a pipeline schedule
@@ -456,6 +458,9 @@ The plugin is built with Maven in `maven-plugin/` (outside the bnd workspace) ag
 [Publishing the plugins](#publishing-the-plugins).
 
 ## Gradle
+
+A runnable bnd workspace with the plugin, the SBOM exporter and a Jenkinsfile:
+[examples/gradle-workspace](../examples/gradle-workspace/README.md).
 
 For bnd workspaces built with Gradle, the plugin `org.geckoprojects.bnd.update` (built in
 `gradle-plugin/`, outside the bnd workspace) adds the four functions as tasks of the root project:

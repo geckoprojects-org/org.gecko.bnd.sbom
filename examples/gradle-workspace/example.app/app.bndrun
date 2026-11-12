@@ -1,0 +1,22 @@
+# The application: example.app with slf4j on Apache Felix.
+# ./gradlew resolve writes -runbundles, ./gradlew sbom the SBOM.
+
+-runfw: org.apache.felix.framework;version='[7.0.5,7.0.5]'
+-runee: JavaSE-21
+
+-runrequires: \
+	bnd.identity;id='example.app',\
+	bnd.identity;id='slf4j.simple'
+
+# The SBOM exporter, fetched by the root project's sbomExporter task (registered here, not in the
+# workspace, so bnd loads it only when an export runs).
+-plugin.sbom: \
+	org.gecko.bnd.sbom.SbomExporter;\
+		path:="${workspace}/cnf/cache/sbom-exporter/org.gecko.bnd.sbom.jar"
+
+-sbom: level=medium, format=cyclonedx
+-runbundles: \
+	example.app;version=snapshot,\
+	org.apache.aries.spifly.dynamic.framework.extension;version='[1.3.7,1.3.8)',\
+	slf4j.api;version='[2.0.17,2.0.18)',\
+	slf4j.simple;version='[2.0.17,2.0.18)'
