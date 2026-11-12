@@ -116,6 +116,11 @@ license files, repository indexes. It is written to treat them as untrusted:
 - **CI:** CodeQL (`security-extended`) runs on every pull request and weekly; the Gradle wrapper
   and the Python packages of the schema check are verified by SHA-256.
 
+## Further documentation
+
+- [Maven dependency scopes in bnd-generated POMs](docs/maven-scopes.md) — why scopes in a
+  bundle's POM change the SBOMs of everyone who consumes it, and the rules we apply.
+
 ## Build
 
 Requires Java 21. The workspace uses bnd 7.4.0 and Gradle 9 (wrapper included).
