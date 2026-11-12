@@ -20,3 +20,7 @@ Export-Package: \
 
 -testpath: \
 	assertj-core;version=latest
+
+# The exporter's own identity for the SBOM's metadata.tools (see org.gecko.bnd.sbom.Tools).
+-includeresource.tool: \
+	{org/gecko/bnd/sbom/tool.properties=tool/tool.properties}

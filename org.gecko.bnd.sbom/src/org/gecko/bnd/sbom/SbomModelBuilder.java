@@ -22,6 +22,8 @@ import java.util.Set;
 
 import aQute.bnd.build.Container;
 import aQute.bnd.build.Project;
+import aQute.bnd.header.OSGiHeader;
+import aQute.bnd.osgi.Constants;
 import org.gecko.bnd.sbom.model.MavenCoordinates;
 import org.gecko.bnd.sbom.model.SbomComponent;
 import org.gecko.bnd.sbom.model.SbomComponent.Category;
@@ -57,7 +59,16 @@ public final class SbomModelBuilder {
 	}
 
 	public SbomModel build() throws Exception {
-		SbomModel model = new SbomModel().setApplicationName(project.getName());
+		// #15: identity of the application — overridable through -sbom, otherwise what the
+		// workspace declares for its artifacts (-groupid, Bundle-Version, Bundle-SCM, Bundle-DocURL)
+		SbomModel model = new SbomModel()
+			.setApplicationName(firstOf(config.applicationName(), project.getName()))
+			.setApplicationGroup(firstOf(config.applicationGroup(), project.getProperty(Constants.GROUPID)))
+			.setApplicationVersion(firstOf(config.applicationVersion(), project.getProperty(Constants.BUNDLE_VERSION)))
+			.setVcsUrl(scmUrl(project.getProperty(Constants.BUNDLE_SCM)))
+			.setWebsiteUrl(firstOf(project.getProperty(Constants.BUNDLE_DOCURL)));
+		Tools.current()
+			.forEach(model::addTool);
 
 		// View 2, A2.1: the resolved application bundles.
 		add(model, runbundles, null);
@@ -118,6 +129,29 @@ public final class SbomModelBuilder {
 		}
 
 		return component;
+	}
+
+	/** The first value that is not blank, or {@code null}. */
+	static String firstOf(String... values) {
+		for (String value : values) {
+			if (value != null && !value.isBlank()) {
+				return value.trim();
+			}
+		}
+		return null;
+	}
+
+	/** The {@code url} of a {@code Bundle-SCM} header ({@code url=..., connection=...}). */
+	static String scmUrl(String bundleScm) {
+		if (bundleScm == null || bundleScm.isBlank()) {
+			return null;
+		}
+		try {
+			return firstOf(OSGiHeader.parseProperties(bundleScm)
+				.get("url"));
+		} catch (IllegalArgumentException e) {
+			return null;
+		}
 	}
 
 	private static String sha512(File file) throws Exception {

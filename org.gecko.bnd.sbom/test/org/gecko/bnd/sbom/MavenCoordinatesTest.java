@@ -98,12 +98,13 @@ public class MavenCoordinatesTest {
 			SbomConfig.of(SbomLevel.SIMPLE, SbomFormat.SPDX, false, "2026-01-01T00:00:00Z")));
 		List<Map<String, Object>> packages = (List<Map<String, Object>>) doc.get("packages");
 
-		assertThat(packages.get(0)).containsEntry("name", "slf4j-api")
+		// package 0 is the application
+		assertThat(packages.get(1)).containsEntry("name", "slf4j-api")
 			.containsEntry("versionInfo", "2.0.17")
 			.containsEntry("comment", "OSGi bundle: slf4j.api 2.0.17.v2026.");
-		assertThat(packages.get(1)).containsEntry("name", "legacy.bundle")
+		assertThat(packages.get(2)).containsEntry("name", "legacy.bundle")
 			.containsEntry("versionInfo", "0.9.0");
-		assertThat((String) packages.get(1)
+		assertThat((String) packages.get(2)
 			.get("comment")).contains("OSGi bundle: legacy.bundle 0.9.0.")
 				.contains("Identity unverified");
 	}

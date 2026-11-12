@@ -25,6 +25,7 @@ import org.gecko.bnd.sbom.model.SbomComponent;
 import org.gecko.bnd.sbom.model.SbomLicense;
 import org.gecko.bnd.sbom.model.SbomModel;
 import org.gecko.bnd.sbom.model.SbomRefs;
+import org.gecko.bnd.sbom.model.SbomTool;
 import aQute.bnd.osgi.EmbeddedResource;
 import aQute.bnd.osgi.Resource;
 import aQute.lib.json.JSONCodec;
@@ -87,19 +88,60 @@ public final class CycloneDxSerializer implements SbomSerializer {
 		metadata.put("timestamp", config.created()
 			.toString());
 
-		Map<String, Object> tool = new LinkedHashMap<>();
-		tool.put("type", "application");
-		tool.put("name", "bnd SBOM Exporter");
 		Map<String, Object> tools = new LinkedHashMap<>();
-		tools.put("components", listOf(tool));
+		tools.put("components", tools(model));
 		metadata.put("tools", tools);
 
+		// #15: the application with its identity and where it comes from
 		Map<String, Object> app = new LinkedHashMap<>();
 		app.put("bom-ref", refs.application());
 		app.put("type", "application");
+		putIfPresent(app, "group", model.getApplicationGroup());
 		app.put("name", model.getApplicationName());
+		putIfPresent(app, "version", model.getApplicationVersion());
+		List<Object> references = new ArrayList<>();
+		if (model.getVcsUrl() != null) {
+			references.add(reference("vcs", model.getVcsUrl()));
+		}
+		if (model.getWebsiteUrl() != null) {
+			references.add(reference("website", model.getWebsiteUrl()));
+		}
+		if (!references.isEmpty()) {
+			app.put("externalReferences", references);
+		}
 		metadata.put("component", app);
 		return metadata;
+	}
+
+	/** The tools of the model; without any (a model built by hand) this exporter by name. */
+	private static List<Object> tools(SbomModel model) {
+		List<Object> result = new ArrayList<>();
+		for (SbomTool tool : model.getTools()) {
+			Map<String, Object> node = new LinkedHashMap<>();
+			node.put("type", "application");
+			if (tool.manufacturer() != null) {
+				node.put("manufacturer", singletonMap("name", tool.manufacturer()));
+			}
+			putIfPresent(node, "group", tool.group());
+			node.put("name", tool.name());
+			putIfPresent(node, "version", tool.version());
+			putIfPresent(node, "purl", tool.purl());
+			result.add(node);
+		}
+		if (result.isEmpty()) {
+			Map<String, Object> node = new LinkedHashMap<>();
+			node.put("type", "application");
+			node.put("name", "org.gecko.bnd.sbom");
+			result.add(node);
+		}
+		return result;
+	}
+
+	private static Map<String, Object> reference(String type, String url) {
+		Map<String, Object> reference = new LinkedHashMap<>();
+		reference.put("type", type);
+		reference.put("url", url);
+		return reference;
 	}
 
 	private Map<String, Object> component(SbomComponent component, SbomRefs refs) {

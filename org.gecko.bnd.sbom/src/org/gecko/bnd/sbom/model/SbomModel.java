@@ -24,6 +24,14 @@ import java.util.List;
 public final class SbomModel {
 
 	private String						applicationName;
+	private String						applicationGroup;
+	private String						applicationVersion;
+	/** Source repository of the application (CycloneDX {@code vcs} reference). */
+	private String						vcsUrl;
+	/** Website of the application (CycloneDX {@code website}, SPDX {@code homepage}). */
+	private String						websiteUrl;
+	/** The tools that write this SBOM. */
+	private final List<SbomTool>		tools			= new ArrayList<>();
 	private final List<SbomComponent>	components		= new ArrayList<>();
 	/**
 	 * Explicitly declared gaps (Q4/A2.5): e.g. boot delegation, {@code DynamicImport-Package},
@@ -39,6 +47,51 @@ public final class SbomModel {
 
 	public SbomModel setApplicationName(String applicationName) {
 		this.applicationName = applicationName;
+		return this;
+	}
+
+	public String getApplicationGroup() {
+		return applicationGroup;
+	}
+
+	public SbomModel setApplicationGroup(String applicationGroup) {
+		this.applicationGroup = applicationGroup;
+		return this;
+	}
+
+	public String getApplicationVersion() {
+		return applicationVersion;
+	}
+
+	public SbomModel setApplicationVersion(String applicationVersion) {
+		this.applicationVersion = applicationVersion;
+		return this;
+	}
+
+	public String getVcsUrl() {
+		return vcsUrl;
+	}
+
+	public SbomModel setVcsUrl(String vcsUrl) {
+		this.vcsUrl = vcsUrl;
+		return this;
+	}
+
+	public String getWebsiteUrl() {
+		return websiteUrl;
+	}
+
+	public SbomModel setWebsiteUrl(String websiteUrl) {
+		this.websiteUrl = websiteUrl;
+		return this;
+	}
+
+	public List<SbomTool> getTools() {
+		return tools;
+	}
+
+	public SbomModel addTool(SbomTool tool) {
+		tools.add(tool);
 		return this;
 	}
 

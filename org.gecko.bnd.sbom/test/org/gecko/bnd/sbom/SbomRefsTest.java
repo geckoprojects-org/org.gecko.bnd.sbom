@@ -138,7 +138,8 @@ public class SbomRefsTest {
 
 		List<Map<String, Object>> packages = (List<Map<String, Object>>) doc.get("packages");
 		assertThat(packages).extracting(p -> p.get("SPDXID"))
-			.containsExactly("SPDXRef-pkg-maven-com.example-foo-1.2.3", "SPDXRef-legacy.bundle-0.9.0");
+			.containsExactly("SPDXRef-app.bndrun", "SPDXRef-pkg-maven-com.example-foo-1.2.3",
+				"SPDXRef-legacy.bundle-0.9.0");
 	}
 
 	private static String read(Resource resource) throws Exception {

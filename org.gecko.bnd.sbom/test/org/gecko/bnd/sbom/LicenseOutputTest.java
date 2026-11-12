@@ -82,9 +82,10 @@ public class LicenseOutputTest {
 		Map<String, Object> mixed = decode(new SpdxSerializer().serialize(
 			model(SbomLicense.spdx("MIT"), SbomLicense.expression("Apache-2.0 OR EPL-2.0")), config(SbomFormat.SPDX)));
 
-		assertThat(((List<Map<String, Object>>) single.get("packages")).get(0))
+		// package 0 is the application
+		assertThat(((List<Map<String, Object>>) single.get("packages")).get(1))
 			.containsEntry("licenseDeclared", "(Apache-2.0 OR EPL-2.0)");
-		assertThat(((List<Map<String, Object>>) mixed.get("packages")).get(0))
+		assertThat(((List<Map<String, Object>>) mixed.get("packages")).get(1))
 			.containsEntry("licenseDeclared", "MIT AND (Apache-2.0 OR EPL-2.0)");
 	}
 

@@ -55,26 +55,37 @@ public final class SbomConfig {
 	static final String			INCLUDE_OSGI	= "includeOSGIMetadata";
 	static final String			TIMESTAMP		= "timestamp";
 	static final String			SERIAL_NUMBER	= "serialNumber";
+	/** Overrides of the application's identity (default: bndrun name, -groupid, Bundle-Version). */
+	static final String			APP_NAME		= "application.name";
+	static final String			APP_GROUP		= "application.group";
+	static final String			APP_VERSION		= "application.version";
 	/** {@code serialNumber} derived from the BOM's content (default). */
 	static final String			SERIAL_CONTENT	= "content";
 	/** {@code serialNumber} random per export. */
 	static final String			SERIAL_RANDOM	= "random";
 
-	private static final List<String>	KEYS	= List.of(LEVEL, FORMAT, INCLUDE_OSGI, TIMESTAMP, SERIAL_NUMBER);
+	private static final List<String>	KEYS	= List.of(LEVEL, FORMAT, INCLUDE_OSGI, TIMESTAMP, SERIAL_NUMBER, APP_NAME,
+		APP_GROUP, APP_VERSION);
 
 	private final SbomLevel		level;
 	private final SbomFormat	format;
 	private final boolean		includeOSGIMetadata;
 	private final Instant		created;
 	private final boolean		randomSerialNumber;
+	private final String		applicationName;
+	private final String		applicationGroup;
+	private final String		applicationVersion;
 
 	private SbomConfig(SbomLevel level, SbomFormat format, boolean includeOSGIMetadata, Instant created,
-		boolean randomSerialNumber) {
+		boolean randomSerialNumber, String applicationName, String applicationGroup, String applicationVersion) {
 		this.level = level;
 		this.format = format;
 		this.includeOSGIMetadata = includeOSGIMetadata;
 		this.created = created;
 		this.randomSerialNumber = randomSerialNumber;
+		this.applicationName = applicationName;
+		this.applicationGroup = applicationGroup;
+		this.applicationVersion = applicationVersion;
 	}
 
 	/**
@@ -84,7 +95,7 @@ public final class SbomConfig {
 	 */
 	public static SbomConfig of(SbomLevel level, SbomFormat format, boolean includeOSGIMetadata, String timestamp) {
 		return new SbomConfig(level, format, includeOSGIMetadata,
-			timestamp != null ? Instant.parse(timestamp) : Instant.now(), false);
+			timestamp != null ? Instant.parse(timestamp) : Instant.now(), false, null, null, null);
 	}
 
 	public static SbomConfig from(Project project, Map<String, String> options) {
@@ -120,7 +131,8 @@ public final class SbomConfig {
 			Stream.of(SERIAL_CONTENT, SERIAL_RANDOM));
 
 		return new SbomConfig(level, format, includeOSGIMetadata, created != null ? created : Instant.now(),
-			SERIAL_RANDOM.equals(serialNumber));
+			SERIAL_RANDOM.equals(serialNumber), text(values, APP_NAME), text(values, APP_GROUP),
+			text(values, APP_VERSION));
 	}
 
 	/**
@@ -167,6 +179,11 @@ public final class SbomConfig {
 		return Optional.empty();
 	}
 
+	private static String text(Map<String, String> values, String key) {
+		String value = values.get(key);
+		return value == null || value.isBlank() ? null : value.trim();
+	}
+
 	private static Optional<String> parseSerialNumber(String value) {
 		String lower = value.toLowerCase(Locale.ROOT);
 		return SERIAL_CONTENT.equals(lower) || SERIAL_RANDOM.equals(lower) ? Optional.of(lower) : Optional.empty();
@@ -208,8 +225,24 @@ public final class SbomConfig {
 		return randomSerialNumber;
 	}
 
+	/** {@code application.name} from {@code -sbom} or the options, or {@code null}. */
+	public String applicationName() {
+		return applicationName;
+	}
+
+	/** {@code application.group} from {@code -sbom} or the options, or {@code null}. */
+	public String applicationGroup() {
+		return applicationGroup;
+	}
+
+	/** {@code application.version} from {@code -sbom} or the options, or {@code null}. */
+	public String applicationVersion() {
+		return applicationVersion;
+	}
+
 	/** A copy with a random serial number (for tests and the Maven/Gradle wrappers). */
 	public SbomConfig withRandomSerialNumber() {
-		return new SbomConfig(level, format, includeOSGIMetadata, created, true);
+		return new SbomConfig(level, format, includeOSGIMetadata, created, true, applicationName, applicationGroup,
+			applicationVersion);
 	}
 }
