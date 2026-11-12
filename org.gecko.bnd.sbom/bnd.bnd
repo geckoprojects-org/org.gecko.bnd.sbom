@@ -10,6 +10,12 @@ Export-Package: \
 	org.gecko.bnd.sbom.model;version=${base-version},\
 	org.gecko.bnd.sbom.serializer;version=${base-version}
 
+# In the generated POM every -buildpath entry is a dependency, by default with scope compile.
+# This is a bnd plugin: bnd is its runtime and brings bndlib, libg and the OSGi APIs itself.
+# Declared as provided, they are not pulled into a Maven consumer's dependencies - nor into
+# the SBOM a tool like Trivy derives from its POM, where provided entries are left out.
+-maven-scope: provided
+
 -buildpath: \
 	biz.aQute.bndlib;version=latest,\
 	biz.aQute.bnd.util;version=latest,\
