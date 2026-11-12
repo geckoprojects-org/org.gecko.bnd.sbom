@@ -1,0 +1,41 @@
+plugins {
+    id 'java-gradle-plugin'
+}
+
+group = 'org.geckoprojects.bnd'
+version = '0.1.0-SNAPSHOT'
+description = 'Gradle tasks for bnd update: updates, vulnerabilities, resolve and apply for a bnd workspace.'
+
+repositories {
+    mavenCentral()
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 21
+    options.encoding = 'UTF-8'
+}
+
+gradlePlugin {
+    plugins {
+        bndUpdate {
+            id = 'org.geckoprojects.bnd.update'
+            implementationClass = 'org.gecko.bnd.update.gradle.BndUpdatePlugin'
+            displayName = 'bnd update'
+            description = project.description
+        }
+    }
+}
+
+dependencies {
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.14.2'
+    testImplementation 'org.assertj:assertj-core:3.27.7'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.14.2'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    // the functional test runs the tasks with the CLI jar built in the bnd workspace
+    def cli = findProperty('bndUpdateCli') ?: file('../org.gecko.bnd.update.cli/generated/org.gecko.bnd.update.cli.jar').absolutePath
+    systemProperty 'bnd.update.cli', cli
+    inputs.file(cli).withPropertyName('bndUpdateCli').optional()
+}

@@ -74,7 +74,7 @@ header:
     - 'gradle.properties'
     - 'gradlew'
     - 'gradlew.bat'
-    - 'settings.gradle'
+    - '**/settings.gradle'
     - 'old/**'
     - 'docs-site/**'
     # the demo UI follows xdp-ui's conventions (short SPDX headers, copied xdp stylesheets, vendored tarballs)

@@ -12,8 +12,8 @@
 
 1–3 only read. Only `apply` changes files.
 
-The same logic is available as a Java library, as a command line, and — planned — as Gradle and
-Maven plugins and CI adapters. Everything in this document applies to all of them.
+The same logic is available as a Java library, as a command line, as Maven and Gradle plugins,
+as a GitHub Action and as a CI adapter for Jenkins and GitLab CI. Everything in this document applies to all of them.
 
 - [Why not Dependabot](#why-not-dependabot)
 - [How it works](#how-it-works)
@@ -449,6 +449,45 @@ For projects built with the bnd Maven plugins, see the runnable example
 The plugin is built with Maven in `maven-plugin/` (outside the bnd workspace) against the
 `org.gecko.bnd.update` library.
 
+## Gradle
+
+For bnd workspaces built with Gradle, the plugin `org.geckoprojects.bnd.update` (built in
+`gradle-plugin/`, outside the bnd workspace) adds the four functions as tasks of the root project:
+
+| Task | Function | Changes files |
+|---|---|---|
+| `bndUpdates` | [updates](#function-1-updates) | no |
+| `bndVulnerabilities` | [vulnerabilities](#function-2-vulnerabilities), needs `trivyReport` | no |
+| `bndResolveCheck` | [resolve](#function-3-resolve), depends on every project's `jar` | no |
+| `bndApply` | [apply](#function-4-apply), depends on every project's `jar` | **yes** |
+
+```groovy
+// settings.gradle: pluginManagement { repositories { gradlePluginPortal(); mavenCentral() } }
+plugins {
+    id 'org.geckoprojects.bnd.update' version '0.1.0-SNAPSHOT'
+}
+
+bndUpdate {
+    scope = 'micro'                          // unset: the workspace's -update-policy
+    mode = 'each'                            // bndApply: each or all
+    only = ['com.fasterxml.jackson.*:*']     // bndApply: only these libraries
+    buildCommand = './gradlew build -x test' // bndApply: verify each update
+    trivyReport = file('trivy.json')         // bndVulnerabilities; bndApply applies its fixes
+    sbom = file('generated/sbom/app/app.cdx.json')
+    format = 'markdown'                      // text, json, markdown
+    failOnFindings = false                   // fail on exit 2 (needs a decision)
+    // cliJar.from('path/to/org.gecko.bnd.update.cli.jar'), or cliVersion = '...'
+}
+```
+
+Reports go to `build/bnd-update/<command>.<md|json|txt>` (`outputDirectory`). Exit 0 and 1 are
+results; 2 fails the task only with `failOnFindings`; anything else always fails it. The tasks
+are never up to date: the answer depends on the repositories, not only on the inputs.
+
+The tasks run the [CLI](#command-line) jar (`org.geckoprojects.bnd:org.gecko.bnd.update.cli`,
+configuration `bndUpdateCli`) in **its own JVM**: the bnd Gradle plugin already brings a bndlib
+into the build, and a second one of another version in the same classloader would conflict.
+
 ## GitHub Action
 
 `.github/actions/bnd-update` runs `apply` and turns the result into **one pull request**: it
@@ -565,6 +604,6 @@ build passes, with `--build-command`), and writes the new `-runbundles`.
 
 Tracked in [#31](https://github.com/geckoprojects-org/org.gecko.bnd.sbom/issues/31):
 
-- GitLab CI and Jenkins adapters that open merge requests (#38)
-- Gradle plugin (#36)
+- GitLab CI template that opens merge requests (#38)
+- publish the Maven and Gradle plugins from Jenkins (#47)
 - optional: report the SBOM's dependencies to GitHub for Dependabot alerts (#32)
