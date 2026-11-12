@@ -389,7 +389,7 @@ vulnerability-fixes:
     exit_codes: [1]
 ```
 
-**GitHub Actions**
+**GitHub Actions** — the CLI directly:
 
 ```yaml
 - run: |
@@ -398,8 +398,75 @@ vulnerability-fixes:
     cat fixes.md >> "$GITHUB_STEP_SUMMARY"
 ```
 
-Ready-made adapters (a GitHub Action, a GitLab CI template, a Jenkins step) that also open
-PRs/MRs are planned (#35, #38).
+or the [GitHub Action](#github-action), which also opens the pull request. Ready-made GitLab CI
+and Jenkins adapters that open merge requests are planned (#38); until then the CLI in a job, as
+above, plus the forge's API.
+
+## GitHub Action
+
+`.github/actions/bnd-update` runs `apply` and turns the result into **one pull request**: it
+fetches the CLI (or uses a given jar), applies the updates, writes the report into the job
+summary and the pull request description, and opens the pull request — or updates it, when the
+branch already has one, so that repeated runs do not pile up pull requests.
+
+```yaml
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # push the update branch
+      pull-requests: write   # open the pull request
+    steps:
+      - uses: actions/checkout@<sha>
+      - uses: actions/setup-java@<sha>
+        with: { distribution: temurin, java-version: '21' }
+      - uses: geckoprojects-org/org.gecko.bnd.sbom/.github/actions/bnd-update@<sha>
+        with:
+          mode: each
+          build-command: ./gradlew build -x test --no-daemon
+```
+
+For vulnerability fixes, export the SBOM and scan it first, then pass the report:
+
+```yaml
+      - run: ./gradlew :app:export.app   # or the SBOM task of the workspace
+      - run: trivy sbom --format json --output trivy.json app/generated/app.bndrun.cdx.json
+      - uses: geckoprojects-org/org.gecko.bnd.sbom/.github/actions/bnd-update@<sha>
+        with:
+          trivy-report: trivy.json
+          sbom: app/generated/app.bndrun.cdx.json
+          branch: bnd-update/fixes
+          title: 'bnd update: vulnerability fixes'
+```
+
+| Input | Meaning | Default |
+|---|---|---|
+| `workspace` | the bnd workspace, relative to the repository | `.` |
+| `mode` | `each` or `all` ([modes](#function-4-apply)) | `each` |
+| `scope` | default scope for the run; empty uses `-update-policy` | — |
+| `only` | `groupId:artifactId` patterns | all proposed |
+| `trivy-report`, `sbom` | apply the fixes for this Trivy report instead of all updates | — |
+| `build-command` | build after resolving; a failing build reverts the update | none |
+| `cli-jar` / `cli-version` | the CLI to use: a local jar, or this version from Maven Central (a `-SNAPSHOT` from the Central snapshot repository; the download is checked against the repository's checksum) | `0.1.0-SNAPSHOT` |
+| `create-pull-request` | open/update the pull request | `true` |
+| `branch`, `title`, `labels` | of the pull request; the branch is reused by later runs | `bnd-update/updates`, `bnd update: dependency updates`, `dependencies` |
+| `token` | for pushing and opening the pull request | `github.token` |
+| `fail-on-reverted` | fail the job when an update had to be reverted (after the pull request for the others) | `false` |
+
+Outputs: `exit-code` (of `apply`), `report` (path of the Markdown report), `pull-request-url`.
+
+Things to know:
+
+- **Java 21** must be on the runner (`actions/setup-java`), plus whatever the build command needs.
+- The repository must allow GitHub Actions to create pull requests (*Settings → Actions →
+  General → Workflow permissions*).
+- **No CI on the pull request with the default token.** GitHub does not start workflows for
+  events caused by `GITHUB_TOKEN`, so a pull request opened with it gets no checks. Pass a GitHub
+  App token or a fine-grained personal token as `token` to get them — the build in `apply` has
+  already run, but the full pipeline (OSGi tests, CodeQL) should run on the pull request too.
+- Commits are **signed off** (`Signed-off-by`), so DCO checks pass.
+- This repository uses the action on itself: `.github/workflows/bnd-update.yml` (weekly, micro,
+  `each`, with a Gradle build).
 
 ## After an update: resolve every bndrun
 
@@ -448,6 +515,6 @@ build passes, with `--build-command`), and writes the new `-runbundles`.
 
 Tracked in [#31](https://github.com/geckoprojects-org/org.gecko.bnd.sbom/issues/31):
 
-- GitHub Action that runs `apply` and opens PRs (#35); GitLab CI and Jenkins adapters (#38)
+- GitLab CI and Jenkins adapters that open merge requests (#38)
 - Gradle plugin (#36), Maven plugin (#37)
 - optional: report the SBOM's dependencies to GitHub for Dependabot alerts (#32)
