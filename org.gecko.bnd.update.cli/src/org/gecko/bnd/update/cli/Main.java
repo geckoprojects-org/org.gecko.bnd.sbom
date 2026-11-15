@@ -32,6 +32,7 @@ import org.gecko.bnd.update.CheckReport;
 import org.gecko.bnd.update.Proposal;
 import org.gecko.bnd.update.ResolveCheck;
 import org.gecko.bnd.update.ResolveReport;
+import org.gecko.bnd.update.RevertedGroup;
 import org.gecko.bnd.update.Sbom;
 import org.gecko.bnd.update.Scope;
 import org.gecko.bnd.update.TrivyReport;
@@ -286,6 +287,11 @@ public final class Main {
 					.lines()
 					.findFirst()
 					.orElse("") : ""));
+		}
+		for (RevertedGroup group : report.groups()) {
+			text.append("reverted together, they may work: apply --mode all --only ")
+				.append(group.only())
+				.append(System.lineSeparator());
 		}
 		return text.length() == 0 ? "No update to apply.\n" : text.toString();
 	}

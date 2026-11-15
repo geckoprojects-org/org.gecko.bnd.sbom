@@ -112,6 +112,13 @@ Two modes:
 | `all` (default) | all updates together, checked once; if the check fails, all are reverted | the updates belong together, one PR/MR for all |
 | `each` | one after the other, each on top of the ones kept so far; a failing one is reverted and the next one tried | you want to know which update breaks what, or keep everything that works |
 
+Some updates only work together: ASM modules require each other in `[9.9.1,9.10.0)`, Aries SPI
+Fly 1.3.8 needs ASM 9.10. With `each`, every one of them is reverted alone. The report then
+groups reverted updates that fail on each other — the old version of one is the bundle whose
+requirement failed the other, or one failed on a package/bundle the other's library provides —
+under "Reverted updates that fail on each other", with the command to retry each group together
+(`apply --mode all --only …`; JSON: `groups`). A hint, not a proof: the group is not tried.
+
 What `apply` updates and what not:
 
 | Library | Changed by `apply` | Status in the report |

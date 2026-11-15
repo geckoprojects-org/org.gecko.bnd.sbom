@@ -28,6 +28,7 @@ import org.gecko.bnd.update.IndexOrigin;
 import org.gecko.bnd.update.Location;
 import org.gecko.bnd.update.Proposal;
 import org.gecko.bnd.update.ResolveReport;
+import org.gecko.bnd.update.RevertedGroup;
 import org.gecko.bnd.update.Update;
 import org.gecko.bnd.update.Vulnerability;
 
@@ -264,6 +265,15 @@ public final class Reports {
 			.ok());
 		root.put("baselineResolves", report.baseline() == null || report.baseline()
 			.allResolve());
+		root.put("groups", report.groups()
+			.stream()
+			.map(g -> g.updates()
+				.stream()
+				.map(u -> u.library()
+					.ga())
+				.distinct()
+				.toList())
+			.toList());
 		return encode(root);
 	}
 
@@ -349,6 +359,24 @@ public final class Reports {
 					.append(a.reason() != null ? " — " + a.reason()
 						.replace("\n", "<br>") : "")
 					.append("\n");
+			}
+		}
+		if (!report.groups()
+			.isEmpty()) {
+			md.append("\n### Reverted updates that fail on each other\n\n")
+				.append("Each of these updates was reverted alone, but they fail on each other's version ranges ")
+				.append("(the old version of one pins the others, or one needs a newer version of another). ")
+				.append("Together they may work - retry each group with `--mode all`:\n\n");
+			for (RevertedGroup group : report.groups()) {
+				md.append("- ")
+					.append(group.updates()
+						.stream()
+						.map(u -> "`" + u.library()
+							.ga() + "` → " + u.proposed())
+						.collect(Collectors.joining(", ")))
+					.append("<br>`apply --mode all --only ")
+					.append(group.only())
+					.append("`\n");
 			}
 		}
 		List<BndrunResult> changed = report.resolve()

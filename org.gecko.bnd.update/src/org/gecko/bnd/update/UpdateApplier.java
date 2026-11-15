@@ -22,8 +22,10 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 import org.gecko.bnd.update.maven.IndexEditor;
+import org.osgi.resource.Resource;
 
 import aQute.bnd.build.Workspace;
+import aQute.bnd.repository.maven.provider.MavenBndRepository;
 import biz.aQute.resolve.Bndrun;
 
 /**
@@ -65,6 +67,8 @@ public final class UpdateApplier {
 	}
 
 	public ApplyReport apply(List<Update> updates, Mode mode) throws Exception {
+		groups = List.of();
+		lastSuccessfulBuild = null;
 		List<AppliedUpdate> results = new ArrayList<>();
 		List<Update> applicable = new ArrayList<>();
 		for (Update update : updates) {
@@ -117,6 +121,8 @@ public final class UpdateApplier {
 				results.addAll(step);
 			}
 		} else {
+			List<Update> reverted = new ArrayList<>();
+			Map<Update, List<String>> unresolved = new LinkedHashMap<>();
 			for (Update update : applicable) {
 				Snapshot snapshot = Snapshot.take(workspaceDir, List.of(update));
 				AppliedUpdate edited = edit(update);
@@ -128,14 +134,62 @@ public final class UpdateApplier {
 				if (failure != null) {
 					snapshot.restore();
 					results.add(new AppliedUpdate(update, AppliedUpdate.Status.REVERTED, failure));
+					reverted.add(update);
+					List<String> blamed = blamed(lastFailure);
+					if (blamed != null) {
+						unresolved.put(update, blamed);
+					}
 				} else {
 					results.add(edited);
 				}
 			}
+			groups = groups(reverted, unresolved);
 		}
 		// the last successful build is the one of the final state: every later update that
 		// failed was reverted
-		return new ApplyReport(mode, results, resolveAll(), lastSuccessfulBuild, baseline);
+		return new ApplyReport(mode, results, resolveAll(), lastSuccessfulBuild, baseline, groups);
+	}
+
+	private List<RevertedGroup>	groups		= List.of();
+	/** the resolution of the last failed {@link #verify()}; {@code null} if the build failed */
+	private ResolveReport		lastFailure;
+
+	/**
+	 * The unresolved requirements of a failed check, for grouping; {@code null} when the failure
+	 * has another cause: the build failed, or a {@code -runfw}/{@code -runpath} pin matches
+	 * nothing.
+	 */
+	private static List<String> blamed(ResolveReport failure) {
+		if (failure == null) {
+			return null;
+		}
+		List<String> blamed = new ArrayList<>();
+		for (BndrunResult r : failure.results()) {
+			if (r.resolves()) {
+				continue;
+			}
+			if (!r.missing()
+				.isEmpty()) {
+				return null;
+			}
+			blamed.addAll(r.unresolved());
+		}
+		return blamed.isEmpty() ? null : blamed;
+	}
+
+	/** The groups among the reverted updates; reads the repositories for the installed bundles. */
+	private List<RevertedGroup> groups(List<Update> reverted, Map<Update, List<String>> unresolved) throws Exception {
+		if (unresolved.size() < 2) {
+			return List.of();
+		}
+		try (Workspace workspace = new Workspace(workspaceDir)) {
+			List<Resource> resources = new ArrayList<>();
+			for (MavenBndRepository repository : workspace.getPlugins(MavenBndRepository.class)) {
+				resources.addAll(repository.getResources());
+			}
+			return RevertedGroups.of(reverted, unresolved,
+				RevertedGroups.installed(unresolved.keySet(), resources));
+		}
 	}
 
 	private BuildStep.Result lastSuccessfulBuild;
@@ -165,8 +219,10 @@ public final class UpdateApplier {
 	 * -runbundles and runs the build. Returns {@code null} on success, otherwise the reason.
 	 */
 	private String verify() throws Exception {
+		lastFailure = null;
 		ResolveReport report = resolveAll();
 		if (!report.allResolve()) {
+			lastFailure = report;
 			return report.results()
 				.stream()
 				.filter(r -> !r.resolves())

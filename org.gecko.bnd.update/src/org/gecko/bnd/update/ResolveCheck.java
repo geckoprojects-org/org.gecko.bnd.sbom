@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -142,18 +143,40 @@ public final class ResolveCheck {
 	static List<String> missing(Bndrun run) {
 		List<String> missing = new ArrayList<>();
 		try {
-			missing(Constants.RUNFW, run.getRunFw(), missing);
-			missing(Constants.RUNPATH, run.getRunpath(), missing);
+			missing(Constants.RUNFW, run.getProperty(Constants.RUNFW), run.getRunFw(), missing);
+			missing(Constants.RUNPATH, run.getProperty(Constants.RUNPATH), run.getRunpath(), missing);
 		} catch (Exception e) {
 			// not decisive: the unresolved requirements are reported anyway
 		}
 		return missing;
 	}
 
-	private static void missing(String instruction, Collection<Container> containers, List<String> missing) {
+	/**
+	 * The clauses of the instruction that no container was found for. bnd does not return a
+	 * container for an entry it cannot find (only an error "Not found in …" on the bndrun), so
+	 * the clauses are compared with what was found; a container of type ERROR counts as missing.
+	 */
+	static void missing(String instruction, String value, Collection<Container> containers, List<String> missing) {
+		if (value == null || value.isBlank()) {
+			return;
+		}
+		Set<String> found = new HashSet<>();
 		for (Container container : containers) {
-			if (container.getType() == Container.TYPE.ERROR) {
-				missing.add(instruction + ": " + container.getBundleSymbolicName() + ";version=" + container.getVersion());
+			if (container.getType() != Container.TYPE.ERROR) {
+				found.add(container.getBundleSymbolicName());
+			}
+		}
+		for (Map.Entry<String, Attrs> entry : new Parameters(value).entrySet()) {
+			String bsn = Processor.removeDuplicateMarker(entry.getKey())
+				.trim();
+			String version = entry.getValue()
+				.getVersion();
+			// a file entry is named by its path, not by a bsn: not comparable
+			if ("file".equals(version)) {
+				continue;
+			}
+			if (!found.contains(bsn)) {
+				missing.add(instruction + ": " + bsn + (version != null ? ";version=" + normalize(version) : ""));
 			}
 		}
 	}
