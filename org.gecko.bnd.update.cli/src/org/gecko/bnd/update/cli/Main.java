@@ -302,6 +302,10 @@ public final class Main {
 				case FAILED -> "DOES NOT RESOLVE";
 				case ERROR -> "ERROR " + r.message();
 			}));
+			r.missing()
+				.forEach(m -> text.append("    matches nothing: ")
+					.append(m)
+					.append(System.lineSeparator()));
 			r.unresolved()
 				.forEach(u -> text.append("    unresolved: ")
 					.append(u)
@@ -313,12 +317,12 @@ public final class Main {
 	private static String text(List<Update> updates) {
 		StringBuilder text = new StringBuilder();
 		for (Update u : updates) {
-			text.append(String.format("%-60s %-16s -> %-16s (allowed %s, latest %s)%n", u.library()
+			text.append(String.format("%-60s %-16s -> %-16s (allowed %s, latest %s)%s%n", u.library()
 				.ga(), u.library()
 					.version(),
 				u.isProposed() ? u.proposed() : "-", u.allowed()
 					.id(),
-				u.latest()));
+				u.latest(), u.origin() != null && !u.isWritable() ? " [" + u.origin() + ", read-only]" : ""));
 		}
 		return text.length() == 0 ? "No updates.\n" : text.toString();
 	}

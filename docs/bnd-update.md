@@ -82,7 +82,15 @@ For a `FAILED` bndrun the unresolved requirements are the reason, e.g.
 `aQute.libg 7.4.0 -> osgi.wiring.package: org.slf4j; version=[2.0.0,3.0.0)`: nothing in the
 repositories exports `org.slf4j` in that range. After an update this is how a too narrow import
 range shows up. bnd's resolver reports it exactly, so no separate pre-check of import ranges is
-needed.
+needed. Optional requirements (`resolution:=optional`) are left out: they do not fail a
+resolution and would only hide the one that does.
+
+One failure has a cause the resolver cannot name: a `-runfw` or `-runpath` entry that matches
+nothing in the repositories, e.g. `-runfw: org.apache.felix.framework;version='[7.0.5,7.0.5]'`
+after the index moved on to 8.0.0. The resolver then runs without a framework and blames every
+bundle that imports `org.osgi.framework`. Such entries are reported first, as `missing`, marked
+as the cause; `apply` gives them as the reason for a revert
+("`-runfw: … pins a version the update removes`").
 
 ### Function 4: apply
 
@@ -113,6 +121,16 @@ What `apply` updates and what not:
 | no version within the policy | no | `NOT_PROPOSED` (listed under "Outside the version policy") |
 | any, when the workspace does not resolve before the first update | no | `NOT_APPLIED` |
 | embedded in a workspace bundle (`-buildpath`), or in a pom index | no | `NOT_IN_INDEX` — update the `-buildpath` of the bundle by hand |
+| in an index a bnd `-library` brings along (expanded in `cnf/cache/…`) | no | `READ_ONLY_INDEX` — the reason names the library; update the library |
+
+Only the workspace's own indexes are written. Each update carries the **origin** of its index:
+`workspace`, `library <bsn> <version>` for an index of a bnd `-library` (expanded by bnd into
+`cnf/cache/<bnd version>/expanded/urn%resource%<bsn>-<version>/…`), or `external <dir>` for one
+outside the workspace. A library index is the content of a released library: a change there is
+not part of the workspace, invisible to `git diff`, and gone on the next expansion. `updates`
+still lists such libraries — marked `(library …, read-only)`, in JSON as
+`"origin": {"kind": "library", "source": "…", "writable": false}` — so that you know which
+library to update.
 
 Run `apply` on a branch or a working copy, never on a checkout with uncommitted work: it rewrites
 files. The Git diff afterwards is the update.
@@ -180,8 +198,15 @@ the minor digit (1.82 → 1.85 is a bug-fix step there); Jackson maintains sever
 parallel and fixes only some of them. The policy is where that knowledge is written down.
 
 **Variants are kept.** Some libraries publish variants of one release with a suffix, like guava
-`33.5.0-jre` and `33.5.0-android`. An update never switches the variant: `-jre` only moves to
-`-jre`, a version without suffix only to versions without one.
+`33.5.0-jre` and `33.5.0-android`, or byte-buddy `1.18.17` and `1.18.17-jdk5`. An update never
+switches the variant: `-jre` only moves to `-jre`, a version without suffix only to versions
+without one. A pre-release marker (`-rc1`, `-beta`) is not a variant: `2.0.0-rc1` moves on to
+`2.0.0`.
+
+**The version scheme is kept.** Some libraries once released with a date as version, which
+compares higher than every later release: commons-collections `20040616` is not newer than
+`3.2.2`. A version whose major is a date (eight digits or more) is only an update for a version
+that is one as well. Both rules apply to every scope and also to the "latest" column.
 
 ## Choosing the fix version
 

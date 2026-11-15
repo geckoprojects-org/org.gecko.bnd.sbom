@@ -24,12 +24,17 @@ import java.util.List;
  * @param resolved what the resolver computes now; empty when it failed
  * @param added in {@code resolved}, not in {@code current}
  * @param removed in {@code current}, not in {@code resolved}
- * @param unresolved for a failed resolution: the requirements nothing satisfies, as
- *            {@code who -> namespace: filter}
+ * @param unresolved for a failed resolution: the mandatory requirements nothing satisfies, as
+ *            {@code who -> namespace: filter}; optional ones are left out, they do not fail a
+ *            resolution
  * @param message for a failed resolution or an error: the resolver's or bnd's message
+ * @param missing for a failed resolution: the {@code -runfw} and {@code -runpath} entries no
+ *            repository provides, as {@code -runfw: bsn;version=range}. Without its framework
+ *            nothing resolves, and the requirements in {@code unresolved} are then only the
+ *            consequence (everyone who imports {@code org.osgi.framework}): this is the cause.
  */
 public record BndrunResult(String bndrun, Status status, List<String> current, List<String> resolved, List<String> added,
-	List<String> removed, List<String> unresolved, String message) {
+	List<String> removed, List<String> unresolved, String message, List<String> missing) {
 
 	public BndrunResult {
 		current = List.copyOf(current);
@@ -37,6 +42,13 @@ public record BndrunResult(String bndrun, Status status, List<String> current, L
 		added = List.copyOf(added);
 		removed = List.copyOf(removed);
 		unresolved = List.copyOf(unresolved);
+		missing = missing == null ? List.of() : List.copyOf(missing);
+	}
+
+	/** A result where every {@code -runfw} and {@code -runpath} entry is provided. */
+	public BndrunResult(String bndrun, Status status, List<String> current, List<String> resolved, List<String> added,
+		List<String> removed, List<String> unresolved, String message) {
+		this(bndrun, status, current, resolved, added, removed, unresolved, message, List.of());
 	}
 
 	public enum Status {

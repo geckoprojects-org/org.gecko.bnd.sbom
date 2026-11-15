@@ -17,7 +17,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 
 import java.io.ByteArrayInputStream;
+import java.io.File;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -25,7 +28,11 @@ import java.util.Map;
 
 import org.gecko.bnd.update.report.Reports;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.osgi.resource.Namespace;
+import org.osgi.resource.Requirement;
 
+import aQute.bnd.osgi.resource.CapReqBuilder;
 import aQute.bnd.version.MavenVersion;
 
 public class UpdateCoreTest {
@@ -235,5 +242,120 @@ public class UpdateCoreTest {
 			.contains("- added `g;version=[33.6.0,33.6.1)`")
 			.contains("- `aQute.libg 7.4.0 -> osgi.wiring.package: org.slf4j; version=[2.0.0,3.0.0)`");
 		assertThat(Reports.json(report)).contains("\"allResolve\":false");
+	}
+
+	@Test
+	public void variantWithDigitsIsKept() {
+		// byte-buddy publishes 1.18.17 and 1.18.17-jdk5: an installed version without a suffix
+		// stays without one
+		assertThat(Scope.MAJOR.allows(v("1.18.4"), v("1.18.17-jdk5"))).isFalse();
+		assertThat(Scope.MAJOR.allows(v("1.18.4"), v("1.18.17"))).isTrue();
+		assertThat(Scope.MAJOR.allows(v("1.18.4-jdk5"), v("1.18.17-jdk5"))).isTrue();
+		// a pre-release is not a variant: it moves on to the release
+		assertThat(Scope.MINOR.allows(v("2.0.0-rc1"), v("2.0.0"))).isTrue();
+		assertThat(Scope.MINOR.allows(v("2.0.0-beta"), v("2.1.0"))).isTrue();
+	}
+
+	@Test
+	public void dateVersionIsNoUpdate() {
+		// commons-collections 20040616 compares higher than 3.2.2, but is an ancient release
+		assertThat(Scope.MAJOR.allows(v("3.2.2"), v("20040616"))).isFalse();
+		assertThat(Scope.successor(v("3.2.2"), v("20040616"))).isFalse();
+		assertThat(Scope.MAJOR.allows(v("20030203.000550"), v("20040616"))).isTrue();
+		// calendar versions with a year as major are a regular scheme
+		assertThat(Scope.MAJOR.allows(v("2023.1.0"), v("2024.2.0"))).isTrue();
+	}
+
+	@Test
+	public void indexOrigin(@TempDir Path ws) {
+		File workspace = ws.toFile();
+		File cache = new File(workspace, "cnf/cache");
+
+		assertThat(IndexOrigin.of(new File(workspace, "cnf/central.mvn"), workspace, cache))
+			.isEqualTo(IndexOrigin.WORKSPACE);
+
+		IndexOrigin library = IndexOrigin.of(new File(cache,
+			"7.4.0/expanded/urn%resource%org.eclipse.fennec.emf.osgi.bnd.library.workspace-1.1.0/template/fennecEMF.maven"),
+			workspace, cache);
+		assertThat(library.kind()).isEqualTo(IndexOrigin.Kind.LIBRARY);
+		assertThat(library.source()).isEqualTo("org.eclipse.fennec.emf.osgi.bnd.library.workspace 1.1.0");
+		assertThat(library.isWritable()).isFalse();
+		assertThat(library).hasToString("library org.eclipse.fennec.emf.osgi.bnd.library.workspace 1.1.0");
+
+		IndexOrigin external = IndexOrigin.of(new File(workspace.getParentFile(), "other/central.mvn"), workspace,
+			cache);
+		assertThat(external.kind()).isEqualTo(IndexOrigin.Kind.EXTERNAL);
+		assertThat(external.isWritable()).isFalse();
+
+		assertThat(IndexOrigin.of(new File("/anywhere/x.mvn"), null, null)).isEqualTo(IndexOrigin.WORKSPACE);
+	}
+
+	@Test
+	public void libraryIndexIsNotWritten(@TempDir Path ws) throws Exception {
+		Files.createDirectories(ws.resolve("cnf"));
+		Files.writeString(ws.resolve("cnf/build.bnd"), "");
+		String relative = "cnf/cache/7.4.0/expanded/urn%resource%org.example.lib-1.1.0/template/lib.maven";
+		Path index = ws.resolve(relative);
+		Files.createDirectories(index.getParent());
+		String content = "org.apache.felix:org.apache.felix.scr:2.2.6\n";
+		Files.writeString(index, content);
+
+		Library scr = new Library("org.apache.felix", "org.apache.felix.scr", "2.2.6");
+		// as the finder reports it ...
+		Update reported = new Update(scr, "Library", relative,
+			IndexOrigin.of(index.toFile(), ws.toFile(), ws.resolve("cnf/cache")
+				.toFile()),
+			versions("2.3.0"), Scope.MAJOR, v("2.3.0"), v("2.3.0"));
+		// ... and as a caller that does not know: the applier checks the file itself
+		Update unknown = new Update(scr, "Library", relative, versions("2.3.0"), Scope.MAJOR, v("2.3.0"), v("2.3.0"));
+
+		ApplyReport report = new UpdateApplier(ws.toFile(), null).apply(List.of(reported, unknown),
+			UpdateApplier.Mode.EACH);
+
+		assertThat(report.updates()).hasSize(2)
+			.allSatisfy(a -> {
+				assertThat(a.status()).isEqualTo(AppliedUpdate.Status.READ_ONLY_INDEX);
+				assertThat(a.reason()).contains("bnd library org.example.lib 1.1.0")
+					.contains("update the library");
+			});
+		assertThat(Files.readString(index)).isEqualTo(content);
+		assertThat(Reports.json(report)).contains("\"kind\":\"library\"")
+			.contains("\"source\":\"org.example.lib 1.1.0\"")
+			.contains("\"writable\":false");
+		assertThat(Reports.markdown(List.of(reported))).contains("(library org.example.lib 1.1.0, read-only)");
+	}
+
+	@Test
+	public void optionalRequirementsDoNotFailResolution() {
+		Requirement optional = new CapReqBuilder("osgi.wiring.package")
+			.addDirective(Namespace.REQUIREMENT_RESOLUTION_DIRECTIVE, Namespace.RESOLUTION_OPTIONAL)
+			.addDirective(Namespace.REQUIREMENT_FILTER_DIRECTIVE, "(osgi.wiring.package=org.antlr.v4.gui)")
+			.buildSyntheticRequirement();
+		Requirement mandatory = new CapReqBuilder("osgi.wiring.package")
+			.addDirective(Namespace.REQUIREMENT_FILTER_DIRECTIVE, "(osgi.wiring.package=org.osgi.framework)")
+			.buildSyntheticRequirement();
+
+		assertThat(ResolveCheck.mandatory(List.of(optional, mandatory))).containsExactly(mandatory);
+		assertThat(ResolveCheck.mandatory(List.of(optional))).containsExactly(optional);
+	}
+
+	@Test
+	public void missingFrameworkIsTheReason() throws Exception {
+		BndrunResult failed = new BndrunResult("ocl/ocl.feature.bndrun", BndrunResult.Status.FAILED, List.of(),
+			List.of(), List.of(), List.of(),
+			List.of("org.eclipse.emf.ecore 2.41.0 -> osgi.wiring.package: org.osgi.framework; version=[1.5.0,2.0.0)"),
+			"failed", List.of("-runfw: org.apache.felix.framework;version=[7.0.5,7.0.5]"));
+
+		assertThat(UpdateApplier.failure(failed)).startsWith(
+			"ocl/ocl.feature.bndrun does not resolve: -runfw: org.apache.felix.framework;version=[7.0.5,7.0.5] pins a version the update removes")
+			.contains("(therefore unresolved: org.eclipse.emf.ecore 2.41.0");
+		assertThat(Reports.markdown(new ResolveReport(List.of(failed))))
+			.contains("- **`-runfw: org.apache.felix.framework;version=[7.0.5,7.0.5]` matches nothing in the repositories**");
+		assertThat(Reports.json(new ResolveReport(List.of(failed)))).contains("\"missing\":[")
+			.contains("\"-runfw: org.apache.felix.framework;version=[7.0.5,7.0.5]\"");
+
+		BndrunResult plain = new BndrunResult("a/z.bndrun", BndrunResult.Status.FAILED, List.of(), List.of(),
+			List.of(), List.of(), List.of("x 1.0.0 -> osgi.wiring.package: y"), "failed");
+		assertThat(UpdateApplier.failure(plain)).isEqualTo("a/z.bndrun does not resolve: x 1.0.0 -> osgi.wiring.package: y");
 	}
 }

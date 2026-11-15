@@ -16,6 +16,7 @@ package org.gecko.bnd.update;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -25,6 +26,7 @@ import java.util.Set;
 import org.osgi.resource.Requirement;
 import org.osgi.service.resolver.ResolutionException;
 
+import aQute.bnd.build.Container;
 import aQute.bnd.build.Project;
 import aQute.bnd.build.Workspace;
 import aQute.bnd.build.model.clauses.VersionedClause;
@@ -33,6 +35,7 @@ import aQute.bnd.header.Parameters;
 import aQute.bnd.osgi.Constants;
 import aQute.bnd.osgi.Processor;
 import aQute.bnd.osgi.resource.FilterParser;
+import aQute.bnd.osgi.resource.ResolutionDirective;
 import aQute.bnd.osgi.resource.ResourceUtils;
 import aQute.bnd.osgi.resource.ResourceUtils.IdentityCapability;
 import biz.aQute.resolve.Bndrun;
@@ -95,13 +98,14 @@ public final class ResolveCheck {
 				List<String> unresolved = new ArrayList<>();
 				if (resolution.exception instanceof ResolutionException re) {
 					FilterParser parser = new FilterParser();
-					for (Requirement requirement : re.getUnresolvedRequirements()) {
+					List<Requirement> requirements = mandatory(re.getUnresolvedRequirements());
+					for (Requirement requirement : requirements) {
 						unresolved.add(who(requirement) + " -> " + requirement.getNamespace() + ": "
 							+ parser.parse(requirement));
 					}
 				}
 				return new BndrunResult(name, BndrunResult.Status.FAILED, current, List.of(), List.of(), List.of(),
-					unresolved, firstLine(resolution.report(false)));
+					unresolved, firstLine(resolution.report(false)), missing(run));
 			}
 			List<String> resolved = new ArrayList<>();
 			for (VersionedClause clause : resolution.getRunBundles()) {
@@ -115,6 +119,42 @@ public final class ResolveCheck {
 		} catch (Exception e) {
 			return new BndrunResult(name, BndrunResult.Status.ERROR, List.of(), List.of(), List.of(), List.of(),
 				List.of(), String.valueOf(e));
+		}
+	}
+
+	/**
+	 * The requirements that fail a resolution: optional ones ({@code resolution:=optional}) the
+	 * resolver lists as well, but they do not, and they hide the one that does. If all are
+	 * optional (should not happen), all are kept, so that the list is never empty for nothing.
+	 */
+	static List<Requirement> mandatory(Collection<Requirement> requirements) {
+		List<Requirement> mandatory = requirements.stream()
+			.filter(r -> ResourceUtils.getResolution(r) != ResolutionDirective.optional)
+			.toList();
+		return mandatory.isEmpty() ? new ArrayList<>(requirements) : mandatory;
+	}
+
+	/**
+	 * The {@code -runfw} and {@code -runpath} entries that no repository provides — e.g. a
+	 * framework pinned to {@code [7.0.5,7.0.5]} after the index moved on to 8.0.0. The resolver
+	 * then runs without a framework and blames everyone who imports {@code org.osgi.framework}.
+	 */
+	static List<String> missing(Bndrun run) {
+		List<String> missing = new ArrayList<>();
+		try {
+			missing(Constants.RUNFW, run.getRunFw(), missing);
+			missing(Constants.RUNPATH, run.getRunpath(), missing);
+		} catch (Exception e) {
+			// not decisive: the unresolved requirements are reported anyway
+		}
+		return missing;
+	}
+
+	private static void missing(String instruction, Collection<Container> containers, List<String> missing) {
+		for (Container container : containers) {
+			if (container.getType() == Container.TYPE.ERROR) {
+				missing.add(instruction + ": " + container.getBundleSymbolicName() + ";version=" + container.getVersion());
+			}
 		}
 	}
 

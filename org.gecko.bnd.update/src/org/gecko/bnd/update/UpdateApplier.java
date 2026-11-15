@@ -41,7 +41,9 @@ import biz.aQute.resolve.Bndrun;
  * </ul>
  * This changes files in the workspace — run it on a branch or a working copy. Libraries embedded in
  * workspace bundles ({@code -buildpath} versions) and pom indexes are not changed; they are
- * reported as {@link AppliedUpdate.Status#NOT_IN_INDEX}.
+ * reported as {@link AppliedUpdate.Status#NOT_IN_INDEX}. Neither are indexes the workspace does not
+ * own — those a {@code -library} brings along, expanded in the bnd cache: they are reported as
+ * {@link AppliedUpdate.Status#READ_ONLY_INDEX}, naming the library.
  */
 public final class UpdateApplier {
 
@@ -73,6 +75,8 @@ public final class UpdateApplier {
 			} else if (update.index() == null) {
 				results.add(new AppliedUpdate(update, AppliedUpdate.Status.NOT_IN_INDEX,
 					"not in a repository index: embedded in a workspace bundle - update the -buildpath of that bundle"));
+			} else if (!origin(update).isWritable()) {
+				results.add(new AppliedUpdate(update, AppliedUpdate.Status.READ_ONLY_INDEX, readOnly(update)));
 			} else if (!indexFile(update).isFile() || update.index()
 				.endsWith(".xml")) {
 				results.add(new AppliedUpdate(update, AppliedUpdate.Status.NOT_IN_INDEX,
@@ -166,10 +170,7 @@ public final class UpdateApplier {
 			return report.results()
 				.stream()
 				.filter(r -> !r.resolves())
-				.map(r -> r.bndrun() + " does not resolve"
-					+ (r.unresolved()
-						.isEmpty() ? (r.message() != null ? ": " + r.message() : "")
-							: ": " + String.join("; ", r.unresolved())))
+				.map(UpdateApplier::failure)
 				.collect(Collectors.joining("\n"));
 		}
 		writeRunbundles(report);
@@ -181,6 +182,37 @@ public final class UpdateApplier {
 			lastSuccessfulBuild = result;
 		}
 		return null;
+	}
+
+	/**
+	 * Why a bndrun no longer resolves. A {@code -runfw} or {@code -runpath} entry that matches
+	 * nothing comes first: every bndrun resolved before the update, so the update removed the
+	 * version it pins, and the unresolved requirements are only the consequence.
+	 */
+	static String failure(BndrunResult r) {
+		StringBuilder reason = new StringBuilder(r.bndrun()).append(" does not resolve");
+		if (!r.missing()
+			.isEmpty()) {
+			reason.append(": ")
+				.append(r.missing()
+					.stream()
+					.map(m -> m + " pins a version the update removes")
+					.collect(Collectors.joining("; ")));
+			if (!r.unresolved()
+				.isEmpty()) {
+				reason.append(" (therefore unresolved: ")
+					.append(String.join("; ", r.unresolved()))
+					.append(")");
+			}
+		} else if (!r.unresolved()
+			.isEmpty()) {
+			reason.append(": ")
+				.append(String.join("; ", r.unresolved()));
+		} else if (r.message() != null) {
+			reason.append(": ")
+				.append(r.message());
+		}
+		return reason.toString();
 	}
 
 	/** A fresh workspace each time: bnd caches the indexes it has read. */
@@ -198,6 +230,29 @@ public final class UpdateApplier {
 				}
 			}
 		}
+	}
+
+	/**
+	 * Who owns the index of an update. The finder's verdict counts, but the file is checked as
+	 * well: whatever the caller says, nothing in the bnd cache is written.
+	 */
+	private IndexOrigin origin(Update update) {
+		IndexOrigin reported = update.origin() != null ? update.origin() : IndexOrigin.WORKSPACE;
+		if (!reported.isWritable()) {
+			return reported;
+		}
+		return IndexOrigin.of(indexFile(update), workspaceDir,
+			new File(workspaceDir, Workspace.CNFDIR + "/" + UpdateFinder.CACHE));
+	}
+
+	private String readOnly(Update update) {
+		IndexOrigin origin = origin(update);
+		return switch (origin.kind()) {
+			case LIBRARY -> "the index " + update.index() + " comes with the bnd library " + origin.source()
+				+ " (-library), not from the workspace - update the library to get a newer version";
+			default -> "the index " + update.index() + " is not part of the workspace (" + origin.source()
+				+ ") and is not changed";
+		};
 	}
 
 	/** The index of an update; a relative path is relative to the workspace. */

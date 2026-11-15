@@ -44,6 +44,7 @@ public final class UpdateFinder {
 	private final VersionSource				versions;
 	private final VersionPolicy				policy;
 	private final File						base;
+	private final File						cache;
 
 	/**
 	 * @param base index paths are reported relative to this directory (the workspace); may be
@@ -51,20 +52,44 @@ public final class UpdateFinder {
 	 */
 	public UpdateFinder(List<MavenBndRepository> repositories, VersionSource versions, VersionPolicy policy,
 		File base) {
+		this(repositories, versions, policy, base, null);
+	}
+
+	/**
+	 * @param base index paths are reported relative to this directory (the workspace); may be
+	 *            {@code null} for absolute paths
+	 * @param cache the workspace's bnd cache ({@code cnf/cache}): an index in it was expanded
+	 *            from a {@code -library} and is read-only; may be {@code null}
+	 */
+	public UpdateFinder(List<MavenBndRepository> repositories, VersionSource versions, VersionPolicy policy,
+		File base, File cache) {
 		this.repositories = List.copyOf(repositories);
 		this.versions = versions;
 		this.policy = policy;
 		this.base = base;
+		this.cache = cache;
 	}
 
 	public static UpdateFinder forWorkspace(Workspace workspace) {
 		List<MavenBndRepository> repositories = workspace.getPlugins(MavenBndRepository.class);
 		return new UpdateFinder(repositories, new MavenRepositoryVersions(repositories), VersionPolicy.from(workspace),
-			workspace.getBase());
+			workspace.getBase(), cacheOf(workspace));
+	}
+
+	/** Directory of the bnd cache in {@code cnf}, parent of the per-bnd-version caches. */
+	static final String CACHE = "cache";
+
+	/** {@code cnf/cache}, the parent of the per-bnd-version caches. */
+	static File cacheOf(Workspace workspace) {
+		return new File(workspace.getBuildDir(), CACHE);
 	}
 
 	public UpdateFinder withPolicy(VersionPolicy policy) {
-		return new UpdateFinder(repositories, versions, policy, base);
+		return new UpdateFinder(repositories, versions, policy, base, cache);
+	}
+
+	private IndexOrigin origin(File index) {
+		return index == null ? null : IndexOrigin.of(index, base, cache);
 	}
 
 	/** The index file as reported: relative to the workspace when possible. */
@@ -108,13 +133,13 @@ public final class UpdateFinder {
 							.equals(library.version()));
 				if (holds) {
 					File index = repository.getIndexFile();
-					updates.add(new Update(library, repository.getName(), path(index), List.of(proposal.proposed()),
-						proposal.allowed(), proposal.proposed(), proposal.proposed()));
+					updates.add(new Update(library, repository.getName(), path(index), origin(index),
+						List.of(proposal.proposed()), proposal.allowed(), proposal.proposed(), proposal.proposed()));
 					found = true;
 				}
 			}
 			if (!found) {
-				updates.add(new Update(library, null, null, List.of(proposal.proposed()), proposal.allowed(),
+				updates.add(new Update(library, null, null, null, List.of(proposal.proposed()), proposal.allowed(),
 					proposal.proposed(), proposal.proposed()));
 			}
 		}
@@ -136,9 +161,10 @@ public final class UpdateFinder {
 					continue;
 				}
 				MavenVersion installed = archive.revision.version;
+				// only versions that continue the installed one: same variant, same scheme
 				List<MavenVersion> higher = versions.available(library.groupId(), library.artifactId())
 					.stream()
-					.filter(v -> v.compareTo(installed) > 0)
+					.filter(v -> v.compareTo(installed) > 0 && Scope.successor(installed, v))
 					.sorted()
 					.toList();
 				if (higher.isEmpty()) {
@@ -149,8 +175,8 @@ public final class UpdateFinder {
 					.filter(v -> allowed.allows(installed, v))
 					.max(Comparator.naturalOrder())
 					.orElse(null);
-				updates.add(new Update(library, repository.getName(), path(index), higher, allowed, proposed,
-					higher.get(higher.size() - 1)));
+				updates.add(new Update(library, repository.getName(), path(index), origin(index), higher, allowed,
+					proposed, higher.get(higher.size() - 1)));
 			}
 		}
 		updates.sort(Comparator.comparing((Update u) -> u.library()
