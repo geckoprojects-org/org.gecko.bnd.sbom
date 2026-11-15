@@ -644,6 +644,29 @@ public class UpdateCoreTest {
 			.library()).isEqualTo(new Library("biz.aQute.bnd", "biz.aQute.bndlib", "7.4.0"));
 	}
 
+	@Test
+	public void outsideThePolicyShowsTheOrigin() throws Exception {
+		Update emf = new Update(new Library("org.eclipse.emf", "org.eclipse.emf.common", "2.44.0"),
+			"Eclipse Fennec EMF Dependencies", "cnf/cache/7.4.0/expanded/urn%resource%x-1.1.0/template/fennecEMF.maven",
+			new IndexOrigin(IndexOrigin.Kind.LIBRARY, "org.eclipse.fennec.emf.osgi.bnd.library.workspace 1.1.0"),
+			versions("2.46.0"), Scope.MICRO, null, v("2.46.0"), Update.Usage.RUNTIME, null);
+		Update own = new Update(new Library("g", "a", "1.0.0"), "Central", "cnf/central.mvn", IndexOrigin.WORKSPACE,
+			versions("2.0.0"), Scope.MICRO, null, v("2.0.0"), Update.Usage.RUNTIME, null);
+
+		String expected = "- `org.eclipse.emf:org.eclipse.emf.common:2.44.0` (library org.eclipse.fennec.emf.osgi.bnd.library.workspace 1.1.0, read-only)"
+			+ " → 2.46.0 needs a minor update (allowed: micro) - the change belongs into that library";
+		assertThat(Reports.markdown(List.of(emf, own))).contains(expected)
+			// the workspace's own index: no note, no hint
+			.contains("- `g:a:1.0.0` → 2.0.0 needs a major update (allowed: micro)\n");
+		assertThat(Reports.json(List.of(emf))).contains("\"kind\":\"library\"")
+			.contains("\"writable\":false");
+
+		ApplyReport report = new ApplyReport(UpdateApplier.Mode.EACH,
+			List.of(new AppliedUpdate(emf, AppliedUpdate.Status.NOT_PROPOSED, "no version within the micro scope")),
+			new ResolveReport(List.of()), null, new ResolveReport(List.of()));
+		assertThat(Reports.markdown(report)).contains(expected);
+	}
+
 	private static Update update(String g, String a, String from, String to) {
 		return new Update(new Library(g, a, from), "Central", "cnf/central.mvn", versions(to), Scope.MAJOR, v(to),
 			v(to));
