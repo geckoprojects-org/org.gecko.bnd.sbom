@@ -15,9 +15,9 @@ package org.gecko.bnd.update.maven;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.TreeSet;
 
+import org.gecko.bnd.update.Scope;
 import org.gecko.bnd.update.VersionSource;
 
 import aQute.bnd.build.Workspace;
@@ -71,8 +71,6 @@ public final class MavenRepositoryVersions implements VersionSource {
 
 	/** -SNAPSHOT, -rc1, -beta12, -alpha, -M3: not proposed as a fix or update. */
 	public static boolean isPreRelease(MavenVersion version) {
-		String text = version.toString()
-			.toLowerCase(Locale.ROOT);
-		return text.endsWith("-snapshot") || text.matches(".*[-.](alpha|beta|rc|cr|m|milestone|preview|pre)[-.]?\\d*([-.].*)?$");
+		return Scope.isPreRelease(version.toString());
 	}
 }

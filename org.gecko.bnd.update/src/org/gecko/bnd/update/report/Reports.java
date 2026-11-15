@@ -24,9 +24,11 @@ import org.gecko.bnd.update.AppliedUpdate;
 import org.gecko.bnd.update.ApplyReport;
 import org.gecko.bnd.update.BndrunResult;
 import org.gecko.bnd.update.CheckReport;
+import org.gecko.bnd.update.IndexOrigin;
 import org.gecko.bnd.update.Location;
 import org.gecko.bnd.update.Proposal;
 import org.gecko.bnd.update.ResolveReport;
+import org.gecko.bnd.update.RevertedGroup;
 import org.gecko.bnd.update.Update;
 import org.gecko.bnd.update.Vulnerability;
 
@@ -55,6 +57,7 @@ public final class Reports {
 				.version());
 			node.put("repository", update.repository());
 			node.put("index", update.index());
+			origin(node, update.origin());
 			node.put("allowedScope", update.allowed()
 				.id());
 			node.put("proposed", string(update.proposed()));
@@ -98,6 +101,7 @@ public final class Reports {
 						.id())
 					.append(") | ")
 					.append(u.repository())
+					.append(readOnlyNote(u))
 					.append(" |\n");
 			}
 		}
@@ -121,6 +125,27 @@ public final class Reports {
 			}
 		}
 		return md.toString();
+	}
+
+	/** {@code "origin": {"kind": "library", "source": "org.example.lib 1.1.0", "writable": false}} */
+	private static void origin(Map<String, Object> node, IndexOrigin origin) {
+		if (origin == null) {
+			node.put("origin", null);
+			return;
+		}
+		Map<String, Object> o = new LinkedHashMap<>();
+		o.put("kind", origin.kind()
+			.name()
+			.toLowerCase(Locale.ROOT));
+		o.put("source", origin.source());
+		o.put("writable", origin.isWritable());
+		node.put("origin", o);
+	}
+
+	/** For an index the workspace does not own: where it comes from, e.g. ` (library x 1.1.0, read-only)`. */
+	private static String readOnlyNote(Update update) {
+		IndexOrigin origin = update.origin();
+		return origin == null || origin.isWritable() ? "" : " (" + origin + ", read-only)";
 	}
 
 	// ---- function 2: vulnerabilities
@@ -223,6 +248,8 @@ public final class Reports {
 				.proposed()));
 			node.put("index", a.update()
 				.index());
+			origin(node, a.update()
+				.origin());
 			node.put("status", a.status()
 				.name());
 			node.put("reason", a.reason());
@@ -238,6 +265,15 @@ public final class Reports {
 			.ok());
 		root.put("baselineResolves", report.baseline() == null || report.baseline()
 			.allResolve());
+		root.put("groups", report.groups()
+			.stream()
+			.map(g -> g.updates()
+				.stream()
+				.map(u -> u.library()
+					.ga())
+				.distinct()
+				.toList())
+			.toList());
 		return encode(root);
 	}
 
@@ -325,6 +361,24 @@ public final class Reports {
 					.append("\n");
 			}
 		}
+		if (!report.groups()
+			.isEmpty()) {
+			md.append("\n### Reverted updates that fail on each other\n\n")
+				.append("Each of these updates was reverted alone, but they fail on each other's version ranges ")
+				.append("(the old version of one pins the others, or one needs a newer version of another). ")
+				.append("Together they may work - retry each group with `--mode all`:\n\n");
+			for (RevertedGroup group : report.groups()) {
+				md.append("- ")
+					.append(group.updates()
+						.stream()
+						.map(u -> "`" + u.library()
+							.ga() + "` → " + u.proposed())
+						.collect(Collectors.joining(", ")))
+					.append("<br>`apply --mode all --only ")
+					.append(group.only())
+					.append("`\n");
+			}
+		}
 		List<BndrunResult> changed = report.resolve()
 			.withStatus(BndrunResult.Status.CHANGED);
 		if (!changed.isEmpty()) {
@@ -345,6 +399,7 @@ public final class Reports {
 			node.put("added", r.added());
 			node.put("removed", r.removed());
 			node.put("unresolved", r.unresolved());
+			node.put("missing", r.missing());
 			node.put("message", r.message());
 			list.add(node);
 		}
@@ -395,8 +450,13 @@ public final class Reports {
 				md.append("\n### `")
 					.append(r.bndrun())
 					.append("`: unresolved requirements\n\n");
+				r.missing()
+					.forEach(m -> md.append("- **`")
+						.append(m)
+						.append("` matches nothing in the repositories** - the cause; the requirements below follow from it\n"));
 				if (r.unresolved()
-					.isEmpty()) {
+					.isEmpty() && r.missing()
+						.isEmpty()) {
 					md.append(r.message())
 						.append("\n");
 				}

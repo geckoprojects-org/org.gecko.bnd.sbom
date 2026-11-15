@@ -23,12 +23,21 @@ import java.util.List;
  * @param resolve the final resolution of all bndruns (after the kept updates)
  * @param build the final build, {@code null} if none ran
  * @param baseline the resolution before any update; when it fails, nothing was applied
+ * @param groups in {@link UpdateApplier.Mode#EACH}: reverted updates that fail on each other and
+ *            may work together; empty otherwise
  */
 public record ApplyReport(UpdateApplier.Mode mode, List<AppliedUpdate> updates, ResolveReport resolve,
-	BuildStep.Result build, ResolveReport baseline) {
+	BuildStep.Result build, ResolveReport baseline, List<RevertedGroup> groups) {
 
 	public ApplyReport {
 		updates = List.copyOf(updates);
+		groups = groups == null ? List.of() : List.copyOf(groups);
+	}
+
+	/** A report without groups of reverted updates. */
+	public ApplyReport(UpdateApplier.Mode mode, List<AppliedUpdate> updates, ResolveReport resolve,
+		BuildStep.Result build, ResolveReport baseline) {
+		this(mode, updates, resolve, build, baseline, List.of());
 	}
 
 	public List<AppliedUpdate> withStatus(AppliedUpdate.Status status) {

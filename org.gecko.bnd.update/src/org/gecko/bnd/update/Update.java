@@ -23,17 +23,35 @@ import aQute.bnd.version.MavenVersion;
  * @param library the library at the version the index holds
  * @param repository the repository whose index holds it
  * @param index the index file ({@code .mvn}) that has to change to update it, may be {@code null}
+ * @param origin who owns {@code index}: only an index of the workspace itself is changed by an
+ *            update; one contributed by a {@code -library} names that library as its source.
+ *            {@code null} when there is no index
  * @param available all higher versions the repositories offer, ascending, without pre-releases
  * @param allowed the scope the version policy allows for this library
  * @param proposed the highest available version within {@code allowed}; {@code null} if there
  *            is none
  * @param latest the highest available version at all
  */
-public record Update(Library library, String repository, String index, List<MavenVersion> available, Scope allowed,
-	MavenVersion proposed, MavenVersion latest) {
+public record Update(Library library, String repository, String index, IndexOrigin origin,
+	List<MavenVersion> available, Scope allowed, MavenVersion proposed, MavenVersion latest) {
 
 	public Update {
 		available = List.copyOf(available);
+		if (index != null && origin == null) {
+			origin = IndexOrigin.WORKSPACE;
+		}
+	}
+
+	/** An update whose index, if any, belongs to the workspace. */
+	public Update(Library library, String repository, String index, List<MavenVersion> available, Scope allowed,
+		MavenVersion proposed, MavenVersion latest) {
+		this(library, repository, index, index != null ? IndexOrigin.WORKSPACE : null, available, allowed, proposed,
+			latest);
+	}
+
+	/** {@code true} if the index is one the update may change (the workspace's own). */
+	public boolean isWritable() {
+		return origin != null && origin.isWritable();
 	}
 
 	/** {@code true} if the policy allows an update. */

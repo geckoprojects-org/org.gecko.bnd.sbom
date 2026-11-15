@@ -31,6 +31,11 @@ public record AppliedUpdate(Update update, Status status, String reason) {
 		SKIPPED_MACRO,
 		/** not applied: the library is not in a {@code .mvn} index (embedded, or pom index) */
 		NOT_IN_INDEX,
+		/**
+		 * not applied: the index is not the workspace's own — contributed by a {@code -library}
+		 * (see {@link IndexOrigin}); the library has to be updated instead
+		 */
+		READ_ONLY_INDEX,
 		/** not applied: the policy allows no update for it */
 		NOT_PROPOSED,
 		/** not applied: the workspace does not resolve even without updates */

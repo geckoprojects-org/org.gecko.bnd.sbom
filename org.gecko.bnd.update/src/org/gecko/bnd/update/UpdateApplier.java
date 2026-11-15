@@ -22,8 +22,10 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 import org.gecko.bnd.update.maven.IndexEditor;
+import org.osgi.resource.Resource;
 
 import aQute.bnd.build.Workspace;
+import aQute.bnd.repository.maven.provider.MavenBndRepository;
 import biz.aQute.resolve.Bndrun;
 
 /**
@@ -41,7 +43,9 @@ import biz.aQute.resolve.Bndrun;
  * </ul>
  * This changes files in the workspace — run it on a branch or a working copy. Libraries embedded in
  * workspace bundles ({@code -buildpath} versions) and pom indexes are not changed; they are
- * reported as {@link AppliedUpdate.Status#NOT_IN_INDEX}.
+ * reported as {@link AppliedUpdate.Status#NOT_IN_INDEX}. Neither are indexes the workspace does not
+ * own — those a {@code -library} brings along, expanded in the bnd cache: they are reported as
+ * {@link AppliedUpdate.Status#READ_ONLY_INDEX}, naming the library.
  */
 public final class UpdateApplier {
 
@@ -63,6 +67,8 @@ public final class UpdateApplier {
 	}
 
 	public ApplyReport apply(List<Update> updates, Mode mode) throws Exception {
+		groups = List.of();
+		lastSuccessfulBuild = null;
 		List<AppliedUpdate> results = new ArrayList<>();
 		List<Update> applicable = new ArrayList<>();
 		for (Update update : updates) {
@@ -73,6 +79,8 @@ public final class UpdateApplier {
 			} else if (update.index() == null) {
 				results.add(new AppliedUpdate(update, AppliedUpdate.Status.NOT_IN_INDEX,
 					"not in a repository index: embedded in a workspace bundle - update the -buildpath of that bundle"));
+			} else if (!origin(update).isWritable()) {
+				results.add(new AppliedUpdate(update, AppliedUpdate.Status.READ_ONLY_INDEX, readOnly(update)));
 			} else if (!indexFile(update).isFile() || update.index()
 				.endsWith(".xml")) {
 				results.add(new AppliedUpdate(update, AppliedUpdate.Status.NOT_IN_INDEX,
@@ -113,6 +121,8 @@ public final class UpdateApplier {
 				results.addAll(step);
 			}
 		} else {
+			List<Update> reverted = new ArrayList<>();
+			Map<Update, List<String>> unresolved = new LinkedHashMap<>();
 			for (Update update : applicable) {
 				Snapshot snapshot = Snapshot.take(workspaceDir, List.of(update));
 				AppliedUpdate edited = edit(update);
@@ -124,14 +134,62 @@ public final class UpdateApplier {
 				if (failure != null) {
 					snapshot.restore();
 					results.add(new AppliedUpdate(update, AppliedUpdate.Status.REVERTED, failure));
+					reverted.add(update);
+					List<String> blamed = blamed(lastFailure);
+					if (blamed != null) {
+						unresolved.put(update, blamed);
+					}
 				} else {
 					results.add(edited);
 				}
 			}
+			groups = groups(reverted, unresolved);
 		}
 		// the last successful build is the one of the final state: every later update that
 		// failed was reverted
-		return new ApplyReport(mode, results, resolveAll(), lastSuccessfulBuild, baseline);
+		return new ApplyReport(mode, results, resolveAll(), lastSuccessfulBuild, baseline, groups);
+	}
+
+	private List<RevertedGroup>	groups		= List.of();
+	/** the resolution of the last failed {@link #verify()}; {@code null} if the build failed */
+	private ResolveReport		lastFailure;
+
+	/**
+	 * The unresolved requirements of a failed check, for grouping; {@code null} when the failure
+	 * has another cause: the build failed, or a {@code -runfw}/{@code -runpath} pin matches
+	 * nothing.
+	 */
+	private static List<String> blamed(ResolveReport failure) {
+		if (failure == null) {
+			return null;
+		}
+		List<String> blamed = new ArrayList<>();
+		for (BndrunResult r : failure.results()) {
+			if (r.resolves()) {
+				continue;
+			}
+			if (!r.missing()
+				.isEmpty()) {
+				return null;
+			}
+			blamed.addAll(r.unresolved());
+		}
+		return blamed.isEmpty() ? null : blamed;
+	}
+
+	/** The groups among the reverted updates; reads the repositories for the installed bundles. */
+	private List<RevertedGroup> groups(List<Update> reverted, Map<Update, List<String>> unresolved) throws Exception {
+		if (unresolved.size() < 2) {
+			return List.of();
+		}
+		try (Workspace workspace = new Workspace(workspaceDir)) {
+			List<Resource> resources = new ArrayList<>();
+			for (MavenBndRepository repository : workspace.getPlugins(MavenBndRepository.class)) {
+				resources.addAll(repository.getResources());
+			}
+			return RevertedGroups.of(reverted, unresolved,
+				RevertedGroups.installed(unresolved.keySet(), resources));
+		}
 	}
 
 	private BuildStep.Result lastSuccessfulBuild;
@@ -161,15 +219,14 @@ public final class UpdateApplier {
 	 * -runbundles and runs the build. Returns {@code null} on success, otherwise the reason.
 	 */
 	private String verify() throws Exception {
+		lastFailure = null;
 		ResolveReport report = resolveAll();
 		if (!report.allResolve()) {
+			lastFailure = report;
 			return report.results()
 				.stream()
 				.filter(r -> !r.resolves())
-				.map(r -> r.bndrun() + " does not resolve"
-					+ (r.unresolved()
-						.isEmpty() ? (r.message() != null ? ": " + r.message() : "")
-							: ": " + String.join("; ", r.unresolved())))
+				.map(UpdateApplier::failure)
 				.collect(Collectors.joining("\n"));
 		}
 		writeRunbundles(report);
@@ -181,6 +238,37 @@ public final class UpdateApplier {
 			lastSuccessfulBuild = result;
 		}
 		return null;
+	}
+
+	/**
+	 * Why a bndrun no longer resolves. A {@code -runfw} or {@code -runpath} entry that matches
+	 * nothing comes first: every bndrun resolved before the update, so the update removed the
+	 * version it pins, and the unresolved requirements are only the consequence.
+	 */
+	static String failure(BndrunResult r) {
+		StringBuilder reason = new StringBuilder(r.bndrun()).append(" does not resolve");
+		if (!r.missing()
+			.isEmpty()) {
+			reason.append(": ")
+				.append(r.missing()
+					.stream()
+					.map(m -> m + " pins a version the update removes")
+					.collect(Collectors.joining("; ")));
+			if (!r.unresolved()
+				.isEmpty()) {
+				reason.append(" (therefore unresolved: ")
+					.append(String.join("; ", r.unresolved()))
+					.append(")");
+			}
+		} else if (!r.unresolved()
+			.isEmpty()) {
+			reason.append(": ")
+				.append(String.join("; ", r.unresolved()));
+		} else if (r.message() != null) {
+			reason.append(": ")
+				.append(r.message());
+		}
+		return reason.toString();
 	}
 
 	/** A fresh workspace each time: bnd caches the indexes it has read. */
@@ -198,6 +286,29 @@ public final class UpdateApplier {
 				}
 			}
 		}
+	}
+
+	/**
+	 * Who owns the index of an update. The finder's verdict counts, but the file is checked as
+	 * well: whatever the caller says, nothing in the bnd cache is written.
+	 */
+	private IndexOrigin origin(Update update) {
+		IndexOrigin reported = update.origin() != null ? update.origin() : IndexOrigin.WORKSPACE;
+		if (!reported.isWritable()) {
+			return reported;
+		}
+		return IndexOrigin.of(indexFile(update), workspaceDir,
+			new File(workspaceDir, Workspace.CNFDIR + "/" + UpdateFinder.CACHE));
+	}
+
+	private String readOnly(Update update) {
+		IndexOrigin origin = origin(update);
+		return switch (origin.kind()) {
+			case LIBRARY -> "the index " + update.index() + " comes with the bnd library " + origin.source()
+				+ " (-library), not from the workspace - update the library to get a newer version";
+			default -> "the index " + update.index() + " is not part of the workspace (" + origin.source()
+				+ ") and is not changed";
+		};
 	}
 
 	/** The index of an update; a relative path is relative to the workspace. */

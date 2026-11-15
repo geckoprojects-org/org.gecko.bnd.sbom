@@ -17,16 +17,27 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 
 import java.io.ByteArrayInputStream;
+import java.io.File;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.gecko.bnd.update.report.Reports;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.osgi.resource.Namespace;
+import org.osgi.resource.Requirement;
 
+import aQute.bnd.osgi.resource.CapReqBuilder;
+import aQute.bnd.osgi.resource.ResourceBuilder;
 import aQute.bnd.version.MavenVersion;
+import aQute.bnd.version.Version;
 
 public class UpdateCoreTest {
 
@@ -235,5 +246,236 @@ public class UpdateCoreTest {
 			.contains("- added `g;version=[33.6.0,33.6.1)`")
 			.contains("- `aQute.libg 7.4.0 -> osgi.wiring.package: org.slf4j; version=[2.0.0,3.0.0)`");
 		assertThat(Reports.json(report)).contains("\"allResolve\":false");
+	}
+
+	@Test
+	public void variantWithDigitsIsKept() {
+		// byte-buddy publishes 1.18.17 and 1.18.17-jdk5: an installed version without a suffix
+		// stays without one
+		assertThat(Scope.MAJOR.allows(v("1.18.4"), v("1.18.17-jdk5"))).isFalse();
+		assertThat(Scope.MAJOR.allows(v("1.18.4"), v("1.18.17"))).isTrue();
+		assertThat(Scope.MAJOR.allows(v("1.18.4-jdk5"), v("1.18.17-jdk5"))).isTrue();
+		// a pre-release is not a variant: it moves on to the release
+		assertThat(Scope.MINOR.allows(v("2.0.0-rc1"), v("2.0.0"))).isTrue();
+		assertThat(Scope.MINOR.allows(v("2.0.0-beta"), v("2.1.0"))).isTrue();
+	}
+
+	@Test
+	public void dateVersionIsNoUpdate() {
+		// commons-collections 20040616 compares higher than 3.2.2, but is an ancient release
+		assertThat(Scope.MAJOR.allows(v("3.2.2"), v("20040616"))).isFalse();
+		assertThat(Scope.successor(v("3.2.2"), v("20040616"))).isFalse();
+		assertThat(Scope.MAJOR.allows(v("20030203.000550"), v("20040616"))).isTrue();
+		// calendar versions with a year as major are a regular scheme
+		assertThat(Scope.MAJOR.allows(v("2023.1.0"), v("2024.2.0"))).isTrue();
+	}
+
+	@Test
+	public void indexOrigin(@TempDir Path ws) {
+		File workspace = ws.toFile();
+		File cache = new File(workspace, "cnf/cache");
+
+		assertThat(IndexOrigin.of(new File(workspace, "cnf/central.mvn"), workspace, cache))
+			.isEqualTo(IndexOrigin.WORKSPACE);
+
+		IndexOrigin library = IndexOrigin.of(new File(cache,
+			"7.4.0/expanded/urn%resource%org.eclipse.fennec.emf.osgi.bnd.library.workspace-1.1.0/template/fennecEMF.maven"),
+			workspace, cache);
+		assertThat(library.kind()).isEqualTo(IndexOrigin.Kind.LIBRARY);
+		assertThat(library.source()).isEqualTo("org.eclipse.fennec.emf.osgi.bnd.library.workspace 1.1.0");
+		assertThat(library.isWritable()).isFalse();
+		assertThat(library).hasToString("library org.eclipse.fennec.emf.osgi.bnd.library.workspace 1.1.0");
+
+		IndexOrigin external = IndexOrigin.of(new File(workspace.getParentFile(), "other/central.mvn"), workspace,
+			cache);
+		assertThat(external.kind()).isEqualTo(IndexOrigin.Kind.EXTERNAL);
+		assertThat(external.isWritable()).isFalse();
+
+		assertThat(IndexOrigin.of(new File("/anywhere/x.mvn"), null, null)).isEqualTo(IndexOrigin.WORKSPACE);
+	}
+
+	@Test
+	public void libraryIndexIsNotWritten(@TempDir Path ws) throws Exception {
+		Files.createDirectories(ws.resolve("cnf"));
+		Files.writeString(ws.resolve("cnf/build.bnd"), "");
+		String relative = "cnf/cache/7.4.0/expanded/urn%resource%org.example.lib-1.1.0/template/lib.maven";
+		Path index = ws.resolve(relative);
+		Files.createDirectories(index.getParent());
+		String content = "org.apache.felix:org.apache.felix.scr:2.2.6\n";
+		Files.writeString(index, content);
+
+		Library scr = new Library("org.apache.felix", "org.apache.felix.scr", "2.2.6");
+		// as the finder reports it ...
+		Update reported = new Update(scr, "Library", relative,
+			IndexOrigin.of(index.toFile(), ws.toFile(), ws.resolve("cnf/cache")
+				.toFile()),
+			versions("2.3.0"), Scope.MAJOR, v("2.3.0"), v("2.3.0"));
+		// ... and as a caller that does not know: the applier checks the file itself
+		Update unknown = new Update(scr, "Library", relative, versions("2.3.0"), Scope.MAJOR, v("2.3.0"), v("2.3.0"));
+
+		ApplyReport report = new UpdateApplier(ws.toFile(), null).apply(List.of(reported, unknown),
+			UpdateApplier.Mode.EACH);
+
+		assertThat(report.updates()).hasSize(2)
+			.allSatisfy(a -> {
+				assertThat(a.status()).isEqualTo(AppliedUpdate.Status.READ_ONLY_INDEX);
+				assertThat(a.reason()).contains("bnd library org.example.lib 1.1.0")
+					.contains("update the library");
+			});
+		assertThat(Files.readString(index)).isEqualTo(content);
+		assertThat(Reports.json(report)).contains("\"kind\":\"library\"")
+			.contains("\"source\":\"org.example.lib 1.1.0\"")
+			.contains("\"writable\":false");
+		assertThat(Reports.markdown(List.of(reported))).contains("(library org.example.lib 1.1.0, read-only)");
+	}
+
+	@Test
+	public void optionalRequirementsDoNotFailResolution() {
+		Requirement optional = new CapReqBuilder("osgi.wiring.package")
+			.addDirective(Namespace.REQUIREMENT_RESOLUTION_DIRECTIVE, Namespace.RESOLUTION_OPTIONAL)
+			.addDirective(Namespace.REQUIREMENT_FILTER_DIRECTIVE, "(osgi.wiring.package=org.antlr.v4.gui)")
+			.buildSyntheticRequirement();
+		Requirement mandatory = new CapReqBuilder("osgi.wiring.package")
+			.addDirective(Namespace.REQUIREMENT_FILTER_DIRECTIVE, "(osgi.wiring.package=org.osgi.framework)")
+			.buildSyntheticRequirement();
+
+		assertThat(ResolveCheck.mandatory(List.of(optional, mandatory))).containsExactly(mandatory);
+		assertThat(ResolveCheck.mandatory(List.of(optional))).containsExactly(optional);
+	}
+
+	@Test
+	public void consequencesAreFilteredOut() throws Exception {
+		Requirement supplementEe = requirementOf("junit-platform-commons__8", "1.14.2",
+			new CapReqBuilder("osgi.ee").addDirective(Namespace.REQUIREMENT_FILTER_DIRECTIVE,
+				"(&(osgi.ee=JavaSE)(version>=1.8.0)(!(version>=9.0.0)))"));
+		Requirement ownEe = requirementOf("org.example.lib", "1.0.0", new CapReqBuilder("osgi.ee")
+			.addDirective(Namespace.REQUIREMENT_FILTER_DIRECTIVE, "(&(osgi.ee=JavaSE)(version>=25))"));
+		Requirement root = new CapReqBuilder("osgi.identity")
+			.addDirective(Namespace.REQUIREMENT_FILTER_DIRECTIVE, "(osgi.identity=org.eclipse.fennec.m2x.ocl.ide)")
+			.buildSyntheticRequirement();
+		Requirement framework = requirementOf("org.eclipse.emf.ecore", "2.41.0",
+			new CapReqBuilder("osgi.wiring.package").addDirective(Namespace.REQUIREMENT_FILTER_DIRECTIVE,
+				"(&(osgi.wiring.package=org.osgi.framework)(version>=1.5.0)(!(version>=2.0.0)))"));
+
+		assertThat(ResolveCheck.relevant(List.of(root, supplementEe, framework))).containsExactly(framework);
+		// an osgi.ee requirement of a regular bundle is a real cause
+		assertThat(ResolveCheck.relevant(List.of(root, ownEe))).containsExactly(ownEe);
+		// never emptied: a -runrequires entry alone is the cause (the bundle does not exist)
+		assertThat(ResolveCheck.relevant(List.of(root))).containsExactly(root);
+		assertThat(ResolveCheck.relevant(List.of(supplementEe))).containsExactly(supplementEe);
+	}
+
+	private static Requirement requirementOf(String bsn, String version, CapReqBuilder requirement)
+		throws Exception {
+		ResourceBuilder resource = new ResourceBuilder();
+		resource.addCapability(new CapReqBuilder("osgi.identity").addAttribute("osgi.identity", bsn)
+			.addAttribute("version", new Version(version))
+			.addAttribute("type", "osgi.bundle"));
+		resource.addRequirement(requirement);
+		return resource.build()
+			.getRequirements(requirement.getNamespace())
+			.get(0);
+	}
+
+	@Test
+	public void missingFrameworkIsTheReason() throws Exception {
+		BndrunResult failed = new BndrunResult("ocl/ocl.feature.bndrun", BndrunResult.Status.FAILED, List.of(),
+			List.of(), List.of(), List.of(),
+			List.of("org.eclipse.emf.ecore 2.41.0 -> osgi.wiring.package: org.osgi.framework; version=[1.5.0,2.0.0)"),
+			"failed", List.of("-runfw: org.apache.felix.framework;version=[7.0.5,7.0.5]"));
+
+		assertThat(UpdateApplier.failure(failed)).startsWith(
+			"ocl/ocl.feature.bndrun does not resolve: -runfw: org.apache.felix.framework;version=[7.0.5,7.0.5] pins a version the update removes")
+			.contains("(therefore unresolved: org.eclipse.emf.ecore 2.41.0");
+		assertThat(Reports.markdown(new ResolveReport(List.of(failed))))
+			.contains("- **`-runfw: org.apache.felix.framework;version=[7.0.5,7.0.5]` matches nothing in the repositories**");
+		assertThat(Reports.json(new ResolveReport(List.of(failed)))).contains("\"missing\":[")
+			.contains("\"-runfw: org.apache.felix.framework;version=[7.0.5,7.0.5]\"");
+
+		BndrunResult plain = new BndrunResult("a/z.bndrun", BndrunResult.Status.FAILED, List.of(), List.of(),
+			List.of(), List.of(), List.of("x 1.0.0 -> osgi.wiring.package: y"), "failed");
+		assertThat(UpdateApplier.failure(plain)).isEqualTo("a/z.bndrun does not resolve: x 1.0.0 -> osgi.wiring.package: y");
+	}
+
+	@Test
+	public void revertedUpdatesThatFailOnEachOther() {
+		Update asm = update("org.ow2.asm", "asm", "9.9.1", "9.10");
+		Update tree = update("org.ow2.asm", "asm-tree", "9.9.1", "9.10");
+		Update spifly = update("org.apache.aries.spifly", "org.apache.aries.spifly.dynamic.bundle", "1.3.7", "1.3.8");
+		Update scr = update("org.apache.felix", "org.apache.felix.scr", "2.2.6", "2.3.0");
+		Update other = update("org.example", "other", "1.0.0", "2.0.0");
+
+		Map<Update, List<String>> unresolved = new HashMap<>();
+		// asm 9.10 alone: asm-tree 9.9.1 still pins asm to [9.9.1,9.10.0)
+		unresolved.put(asm, List.of(
+			"org.objectweb.asm.tree 9.9.1 -> osgi.wiring.package: org.objectweb.asm; version=[9.9.1,9.10.0)"));
+		// asm-tree 9.10 alone needs asm 9.10
+		unresolved.put(tree, List.of(
+			"org.objectweb.asm.tree 9.10.0 -> osgi.wiring.package: org.objectweb.asm; version=[9.10.0,9.11.0)"));
+		// spifly 1.3.8 needs asm >= 9.10
+		unresolved.put(spifly, List.of(
+			"org.apache.aries.spifly.dynamic.bundle 1.3.8 -> osgi.wiring.package: org.objectweb.asm.commons; version=[9.10.0,10.0.0)"));
+		// unrelated: needs something no reverted update provides
+		unresolved.put(other, List.of("org.example.other 2.0.0 -> osgi.wiring.package: org.example.missing"));
+		// scr: reverted without unresolved requirements (e.g. the build failed) - not grouped
+
+		Map<Update, RevertedGroups.Installed> installed = new HashMap<>();
+		installed.put(asm, new RevertedGroups.Installed("org.objectweb.asm 9.9.1",
+			Set.of("osgi.wiring.package:org.objectweb.asm", "osgi.wiring.package:org.objectweb.asm.signature")));
+		installed.put(tree, new RevertedGroups.Installed("org.objectweb.asm.tree 9.9.1",
+			Set.of("osgi.wiring.package:org.objectweb.asm.tree")));
+		installed.put(spifly, new RevertedGroups.Installed("org.apache.aries.spifly.dynamic.bundle 1.3.7",
+			Set.of("osgi.wiring.package:org.apache.aries.spifly")));
+		installed.put(other, new RevertedGroups.Installed("org.example.other 1.0.0", Set.of()));
+
+		List<Update> reverted = List.of(asm, scr, tree, other, spifly);
+		// spifly needs org.objectweb.asm.commons, which none of the reverted updates provides:
+		// it stays alone ...
+		assertThat(RevertedGroups.of(reverted, unresolved, installed)).singleElement()
+			.satisfies(g -> assertThat(g.only()).isEqualTo("org.ow2.asm:asm,org.ow2.asm:asm-tree"));
+
+		// ... until asm-commons is among the reverted updates
+		Update commons = update("org.ow2.asm", "asm-commons", "9.9.1", "9.10");
+		unresolved.put(commons, List.of(
+			"org.objectweb.asm.commons 9.10.0 -> osgi.wiring.package: org.objectweb.asm.tree; version=[9.10.0,9.11.0)"));
+		installed.put(commons, new RevertedGroups.Installed("org.objectweb.asm.commons 9.9.1",
+			Set.of("osgi.wiring.package:org.objectweb.asm.commons")));
+		List<RevertedGroup> groups = RevertedGroups.of(List.of(asm, scr, tree, other, spifly, commons), unresolved,
+			installed);
+		assertThat(groups).singleElement()
+			.satisfies(g -> assertThat(g.only())
+				.isEqualTo("org.ow2.asm:asm,org.ow2.asm:asm-tree,org.apache.aries.spifly:org.apache.aries.spifly.dynamic.bundle,org.ow2.asm:asm-commons"));
+
+		ApplyReport report = new ApplyReport(UpdateApplier.Mode.EACH,
+			List.of(new AppliedUpdate(asm, AppliedUpdate.Status.REVERTED, "x")), new ResolveReport(List.of()), null,
+			new ResolveReport(List.of()), groups);
+		assertThat(Reports.markdown(report)).contains("### Reverted updates that fail on each other")
+			.contains("`apply --mode all --only org.ow2.asm:asm,org.ow2.asm:asm-tree,");
+	}
+
+	@Test
+	public void blameIsParsed() {
+		RevertedGroups.Blame blame = RevertedGroups.Blame
+			.parse("org.eclipse.emf.ecore 2.41.0 -> osgi.wiring.package: org.osgi.framework; version=[1.5.0,2.0.0)");
+		assertThat(blame).isEqualTo(
+			new RevertedGroups.Blame("org.eclipse.emf.ecore 2.41.0", "osgi.wiring.package", "org.osgi.framework"));
+		assertThat(RevertedGroups.Blame.parse("-runrequires -> osgi.identity: x")
+			.who()).isEqualTo("-runrequires");
+		assertThat(RevertedGroups.Blame.parse("garbage")).isNull();
+	}
+
+	@Test
+	public void runfwWithoutContainerIsMissing() {
+		// bnd returns no container for an entry it cannot find
+		List<String> missing = new ArrayList<>();
+		ResolveCheck.missing("-runfw", "org.apache.felix.framework;version='[7.0.5,7.0.5]'", List.of(), missing);
+		ResolveCheck.missing("-runpath", "lib/x.jar;version=file", List.of(), missing);
+		ResolveCheck.missing("-runpath", null, List.of(), missing);
+		assertThat(missing).containsExactly("-runfw: org.apache.felix.framework;version=[7.0.5,7.0.5]");
+	}
+
+	private static Update update(String g, String a, String from, String to) {
+		return new Update(new Library(g, a, from), "Central", "cnf/central.mvn", versions(to), Scope.MAJOR, v(to),
+			v(to));
 	}
 }

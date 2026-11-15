@@ -16,15 +16,20 @@ package org.gecko.bnd.update;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Predicate;
+import java.util.regex.Pattern;
 
 import org.osgi.resource.Requirement;
 import org.osgi.service.resolver.ResolutionException;
 
+import aQute.bnd.build.Container;
 import aQute.bnd.build.Project;
 import aQute.bnd.build.Workspace;
 import aQute.bnd.build.model.clauses.VersionedClause;
@@ -33,6 +38,7 @@ import aQute.bnd.header.Parameters;
 import aQute.bnd.osgi.Constants;
 import aQute.bnd.osgi.Processor;
 import aQute.bnd.osgi.resource.FilterParser;
+import aQute.bnd.osgi.resource.ResolutionDirective;
 import aQute.bnd.osgi.resource.ResourceUtils;
 import aQute.bnd.osgi.resource.ResourceUtils.IdentityCapability;
 import biz.aQute.resolve.Bndrun;
@@ -95,13 +101,14 @@ public final class ResolveCheck {
 				List<String> unresolved = new ArrayList<>();
 				if (resolution.exception instanceof ResolutionException re) {
 					FilterParser parser = new FilterParser();
-					for (Requirement requirement : re.getUnresolvedRequirements()) {
+					List<Requirement> requirements = relevant(re.getUnresolvedRequirements());
+					for (Requirement requirement : requirements) {
 						unresolved.add(who(requirement) + " -> " + requirement.getNamespace() + ": "
 							+ parser.parse(requirement));
 					}
 				}
 				return new BndrunResult(name, BndrunResult.Status.FAILED, current, List.of(), List.of(), List.of(),
-					unresolved, firstLine(resolution.report(false)));
+					unresolved, firstLine(resolution.report(false)), missing(run));
 			}
 			List<String> resolved = new ArrayList<>();
 			for (VersionedClause clause : resolution.getRunBundles()) {
@@ -115,6 +122,107 @@ public final class ResolveCheck {
 		} catch (Exception e) {
 			return new BndrunResult(name, BndrunResult.Status.ERROR, List.of(), List.of(), List.of(), List.of(),
 				List.of(), String.valueOf(e));
+		}
+	}
+
+	/**
+	 * The requirements that fail a resolution: optional ones ({@code resolution:=optional}) the
+	 * resolver lists as well, but they do not, and they hide the one that does. If all are
+	 * optional (should not happen), all are kept, so that the list is never empty for nothing.
+	 */
+	static List<Requirement> mandatory(Collection<Requirement> requirements) {
+		return keep(new ArrayList<>(requirements),
+			r -> ResourceUtils.getResolution(r) != ResolutionDirective.optional);
+	}
+
+	/**
+	 * The requirements that explain a failed resolution, without the ones that only follow from
+	 * it:
+	 * <ol>
+	 * <li>optional requirements ({@link #mandatory});</li>
+	 * <li>the {@code osgi.ee} requirement of a multi-release supplement: bnd indexes a
+	 * multi-release jar as one resource per Java release ({@code junit-platform-commons__8}
+	 * requires {@code JavaSE [1.8,9)}); the resolver lists those for other releases than the
+	 * {@code -runee} whenever it fails, whatever the cause;</li>
+	 * <li>{@code -runrequires} entries when there is anything else: the root that could not be
+	 * satisfied because of the requirements below it.</li>
+	 * </ol>
+	 * Each step only applies if something remains, so that the list is never emptied.
+	 */
+	static List<Requirement> relevant(Collection<Requirement> requirements) {
+		List<Requirement> relevant = mandatory(requirements);
+		relevant = keep(relevant, r -> !isSupplementEe(r));
+		relevant = keep(relevant, r -> !"-runrequires".equals(who(r)));
+		return relevant;
+	}
+
+	/** {@code osgi.ee}, the execution environment namespace */
+	private static final String		EXECUTION_ENVIRONMENT		= "osgi.ee";
+
+	/** {@code bsn__<release>}, the resource bnd indexes for one release of a multi-release jar */
+	private static final Pattern MULTI_RELEASE_SUPPLEMENT = Pattern.compile(".+__\\d+");
+
+	private static boolean isSupplementEe(Requirement requirement) {
+		if (!EXECUTION_ENVIRONMENT.equals(requirement.getNamespace())
+			|| requirement.getResource() == null) {
+			return false;
+		}
+		IdentityCapability identity = ResourceUtils.getIdentityCapability(requirement.getResource());
+		return identity != null && identity.osgi_identity() != null && MULTI_RELEASE_SUPPLEMENT.matcher(identity.osgi_identity())
+			.matches();
+	}
+
+	/** The requirements that pass the filter, or all of them if none does. */
+	private static List<Requirement> keep(List<Requirement> requirements, Predicate<Requirement> filter) {
+		List<Requirement> kept = requirements.stream()
+			.filter(filter)
+			.toList();
+		return kept.isEmpty() ? requirements : kept;
+	}
+
+	/**
+	 * The {@code -runfw} and {@code -runpath} entries that no repository provides — e.g. a
+	 * framework pinned to {@code [7.0.5,7.0.5]} after the index moved on to 8.0.0. The resolver
+	 * then runs without a framework and blames everyone who imports {@code org.osgi.framework}.
+	 */
+	static List<String> missing(Bndrun run) {
+		List<String> missing = new ArrayList<>();
+		try {
+			missing(Constants.RUNFW, run.getProperty(Constants.RUNFW), run.getRunFw(), missing);
+			missing(Constants.RUNPATH, run.getProperty(Constants.RUNPATH), run.getRunpath(), missing);
+		} catch (Exception e) {
+			// not decisive: the unresolved requirements are reported anyway
+		}
+		return missing;
+	}
+
+	/**
+	 * The clauses of the instruction that no container was found for. bnd does not return a
+	 * container for an entry it cannot find (only an error "Not found in …" on the bndrun), so
+	 * the clauses are compared with what was found; a container of type ERROR counts as missing.
+	 */
+	static void missing(String instruction, String value, Collection<Container> containers, List<String> missing) {
+		if (value == null || value.isBlank()) {
+			return;
+		}
+		Set<String> found = new HashSet<>();
+		for (Container container : containers) {
+			if (container.getType() != Container.TYPE.ERROR) {
+				found.add(container.getBundleSymbolicName());
+			}
+		}
+		for (Map.Entry<String, Attrs> entry : new Parameters(value).entrySet()) {
+			String bsn = Processor.removeDuplicateMarker(entry.getKey())
+				.trim();
+			String version = entry.getValue()
+				.getVersion();
+			// a file entry is named by its path, not by a bsn: not comparable
+			if ("file".equals(version)) {
+				continue;
+			}
+			if (!found.contains(bsn)) {
+				missing.add(instruction + ": " + bsn + (version != null ? ";version=" + normalize(version) : ""));
+			}
 		}
 	}
 
