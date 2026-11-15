@@ -328,7 +328,9 @@ public final class Main {
 					.version(),
 				u.isProposed() ? u.proposed() : "-", u.allowed()
 					.id(),
-				u.latest(), u.origin() != null && !u.isWritable() ? " [" + u.origin() + ", read-only]" : ""));
+				u.latest(), (u.isBuildTime() ? " [build time]" : "")
+					+ (u.isShadowed() ? " [shadowed: workspace uses " + u.shadowedBy() + "]" : "")
+					+ (u.origin() != null && !u.isWritable() ? " [" + u.origin() + ", read-only]" : "")));
 		}
 		return text.length() == 0 ? "No updates.\n" : text.toString();
 	}

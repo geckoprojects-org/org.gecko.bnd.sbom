@@ -58,6 +58,10 @@ public final class Reports {
 			node.put("repository", update.repository());
 			node.put("index", update.index());
 			origin(node, update.origin());
+			node.put("usage", update.usage()
+				.name()
+				.toLowerCase(Locale.ROOT));
+			node.put("shadowedBy", update.shadowedBy());
 			node.put("allowedScope", update.allowed()
 				.id());
 			node.put("proposed", string(update.proposed()));
@@ -75,13 +79,16 @@ public final class Reports {
 
 	public static String markdown(List<Update> updates) {
 		StringBuilder md = new StringBuilder("## Updates\n\n");
+		boolean classified = updates.stream()
+			.anyMatch(u -> u.usage() != Update.Usage.UNKNOWN);
 		List<Update> proposed = updates.stream()
-			.filter(Update::isProposed)
+			.filter(u -> u.isProposed() && !u.isShadowed())
 			.toList();
 		if (proposed.isEmpty()) {
 			md.append("No update within the version policy.\n");
 		} else {
-			md.append("| Library | Installed | Proposed | Allowed | Latest | Repository |\n|---|---|---|---|---|---|\n");
+			md.append(classified ? "| Library | Installed | Proposed | Allowed | Latest | Use | Repository |\n|---|---|---|---|---|---|---|\n"
+				: "| Library | Installed | Proposed | Allowed | Latest | Repository |\n|---|---|---|---|---|---|\n");
 			for (Update u : proposed) {
 				md.append("| `")
 					.append(u.library()
@@ -99,14 +106,40 @@ public final class Reports {
 					.append(" (")
 					.append(u.latestScope()
 						.id())
-					.append(") | ")
-					.append(u.repository())
+					.append(") | ");
+				if (classified) {
+					md.append(usage(u))
+						.append(" | ");
+				}
+				md.append(u.repository())
 					.append(readOnlyNote(u))
 					.append(" |\n");
 			}
 		}
+		// build time: never in the application, so a step beyond the policy is worth knowing
+		List<Update> buildTime = updates.stream()
+			.filter(u -> u.isBuildTime() && !u.isShadowed() && !u.latest()
+				.equals(u.proposed()))
+			.toList();
+		if (!buildTime.isEmpty()) {
+			md.append("\n### Build time: newer versions beyond the policy\n\n")
+				.append("Only needed to build or test - in no application bndrun, never in the application or its SBOM. ")
+				.append("A larger step is usually safe; allow it with `buildtime;scope=minor` (or `major`) in `-update-policy`.\n\n");
+			for (Update u : buildTime) {
+				md.append("- `")
+					.append(u.library())
+					.append("`")
+					.append(readOnlyNote(u))
+					.append(" → ")
+					.append(u.latest())
+					.append(" (")
+					.append(u.latestScope()
+						.id())
+					.append(", build time only)\n");
+			}
+		}
 		List<Update> outside = updates.stream()
-			.filter(u -> !u.isProposed())
+			.filter(u -> !u.isProposed() && !u.isShadowed() && !u.isBuildTime())
 			.toList();
 		if (!outside.isEmpty()) {
 			md.append("\n### Outside the version policy\n\n");
@@ -124,7 +157,33 @@ public final class Reports {
 					.append(")\n");
 			}
 		}
+		List<Update> shadowed = updates.stream()
+			.filter(Update::isShadowed)
+			.toList();
+		if (!shadowed.isEmpty()) {
+			md.append("\n### Shadowed by another index\n\n")
+				.append("Not used: another index offers a higher version, and bnd resolves to the highest version of all indexes. ")
+				.append("No update needed; the entry could be removed or its index (library) updated.\n\n");
+			for (Update u : shadowed) {
+				md.append("- `")
+					.append(u.library())
+					.append("` in ")
+					.append(u.repository())
+					.append(readOnlyNote(u))
+					.append(" - the workspace uses ")
+					.append(u.shadowedBy())
+					.append("\n");
+			}
+		}
 		return md.toString();
+	}
+
+	private static String usage(Update u) {
+		return switch (u.usage()) {
+			case RUNTIME -> "runtime";
+			case BUILD_TIME -> "build time";
+			case UNKNOWN -> "";
+		};
 	}
 
 	/** {@code "origin": {"kind": "library", "source": "org.example.lib 1.1.0", "writable": false}} */
@@ -318,9 +377,15 @@ public final class Reports {
 		}
 		List<AppliedUpdate> other = report.updates()
 			.stream()
-			.filter(a -> a.status() != AppliedUpdate.Status.APPLIED && a.status() != AppliedUpdate.Status.NOT_PROPOSED)
+			.filter(a -> a.status() != AppliedUpdate.Status.APPLIED && (a.status() != AppliedUpdate.Status.NOT_PROPOSED
+				|| a.update()
+					.isShadowed()))
 			.toList();
-		List<AppliedUpdate> outside = report.withStatus(AppliedUpdate.Status.NOT_PROPOSED);
+		List<AppliedUpdate> outside = report.withStatus(AppliedUpdate.Status.NOT_PROPOSED)
+			.stream()
+			.filter(a -> !a.update()
+				.isShadowed())
+			.toList();
 		if (!outside.isEmpty()) {
 			md.append("\n### Outside the version policy\n\n");
 			for (AppliedUpdate a : outside) {

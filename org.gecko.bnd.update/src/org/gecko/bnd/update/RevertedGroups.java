@@ -13,7 +13,6 @@
  */
 package org.gecko.bnd.update;
 
-import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
@@ -25,10 +24,6 @@ import java.util.TreeMap;
 
 import org.osgi.resource.Capability;
 import org.osgi.resource.Resource;
-
-import aQute.bnd.osgi.resource.ResourceUtils;
-import aQute.bnd.osgi.resource.ResourceUtils.ContentCapability;
-import aQute.bnd.osgi.resource.ResourceUtils.IdentityCapability;
 
 /**
  * Finds the {@link RevertedGroup groups} among updates reverted one by one: two reverted updates
@@ -146,54 +141,29 @@ final class RevertedGroups {
 		return false;
 	}
 
-	/**
-	 * The installed version of each update's library among the repositories' resources, matched by
-	 * the Maven path in the resource's content URL ({@code …/group/path/artifact/version/…}).
-	 */
+	/** The installed version of each update's library among the repositories' resources. */
 	static Map<Update, Installed> installed(Collection<Update> updates, Collection<Resource> resources) {
 		Map<Update, Installed> result = new LinkedHashMap<>();
 		for (Update update : updates) {
-			Library library = update.library();
-			String path = "/" + library.groupId()
-				.replace('.', '/') + "/" + library.artifactId() + "/" + library.version() + "/";
-			for (Resource resource : resources) {
-				if (matches(resource, path)) {
-					Installed installed = installed(resource);
-					if (installed != null) {
-						result.put(update, installed);
-						break;
-					}
-				}
+			Bundles.Bundle bundle = Bundles.of(update.library(), resources);
+			if (bundle != null) {
+				result.put(update, installed(bundle));
 			}
 		}
 		return result;
 	}
 
-	private static boolean matches(Resource resource, String path) {
-		for (ContentCapability content : ResourceUtils.getContentCapabilities(resource)) {
-			URI url = content.url();
-			if (url != null && String.valueOf(url.getPath())
-				.contains(path)) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	static Installed installed(Resource resource) {
-		IdentityCapability identity = ResourceUtils.getIdentityCapability(resource);
-		if (identity == null || identity.osgi_identity() == null || identity.version() == null) {
-			return null;
-		}
+	static Installed installed(Bundles.Bundle bundle) {
 		Set<String> provides = new HashSet<>();
-		for (Capability capability : resource.getCapabilities(null)) {
+		for (Capability capability : bundle.resource()
+			.getCapabilities(null)) {
 			Object name = capability.getAttributes()
 				.get(capability.getNamespace());
 			if (name != null) {
 				provides.add(capability.getNamespace() + ":" + name);
 			}
 		}
-		return new Installed(identity.osgi_identity() + " " + identity.version(), provides);
+		return new Installed(bundle.identity(), provides);
 	}
 
 	private static int find(int[] parent, int i) {

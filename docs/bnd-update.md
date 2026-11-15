@@ -59,6 +59,32 @@ For every library in the workspace's Maven repository indexes (`.mvn` files of e
 
 Libraries without a newer version are not listed.
 
+**Shadowed entries.** A library may be in several indexes — the workspace's own and one a bnd
+`-library` brings along, at different versions. bnd resolves to the highest version any index
+offers, so a lower entry is not used. Such an entry gets no proposal; the report lists it under
+"Shadowed by another index" with the version the workspace actually uses ("scr 2.2.6 in
+*Eclipse Fennec EMF Dependencies* - the workspace uses 2.3.0 in Central"). Only versions of the
+same variant and scheme shadow each other; several versions in one index are deliberate and do
+not.
+
+**Runtime or build time.** Each library is classified by the workspace's bndruns, read from the
+files without resolving:
+
+- **runtime**: in the `-runbundles`, `-runfw` or `-runpath` of an *application* bndrun — the
+  bndruns with an `-sbom` instruction; without any, every bndrun that is not a test run (a test run
+  has JUnit, OpenTest4J, the bnd tester, OSGi-Test, AssertJ, Mockito or Hamcrest in its
+  `-runbundles`);
+- **build time**: everything else — build path, tests, code generators, bnd workspace libraries.
+  These never reach the application or its SBOM. The report shows them in a separate section
+  "Build time: newer versions beyond the policy" with the latest version, and the policy can allow
+  them a larger step (`buildtime;scope=minor`, see [the version policy](#the-version-policy)).
+
+**The bnd toolchain.** The bnd version of the build is in no index: it is read from
+`gradle.properties` (`bnd_version`, `bndVersion`), a literal version of the `biz.aQute.bnd.*`
+plugin in `settings.gradle`, or `bnd.version` in a Maven `pom.xml`, and reported as a build-time
+update of `biz.aQute.bnd:biz.aQute.bndlib` with that file as its origin. `apply` never changes it
+(`READ_ONLY_INDEX`, "change it there").
+
 ### Function 3: resolve
 
 Resolves every bndrun of the workspace (the `*.bndrun` files at the top level of each project)
@@ -208,7 +234,17 @@ The policy is set in the workspace (`cnf/build.bnd` or a file in `cnf/ext/`):
 - Entries are `groupId:artifactId` patterns; `*` matches any part of a group or artifact id.
 - The **first** matching entry wins; `default` applies when none matches (and is `micro` when
   absent).
-- On the command line, `--scope` overrides `default` for one run; the per-library entries stay.
+- `buildtime;scope=…` sets the scope for [build-time libraries](#function-1-updates) — only
+  needed to build or test, never in the application. Per-library entries still come first; without
+  `buildtime`, `default` applies to them as well.
+- On the command line, `--scope` overrides `default` for one run; the per-library entries and
+  `buildtime` stay.
+
+```
+-update-policy: \
+	default;scope=micro,\
+	buildtime;scope=minor
+```
 
 Why per library: not every library follows semantic versioning. Bouncy Castle counts releases in
 the minor digit (1.82 → 1.85 is a bug-fix step there); Jackson maintains several minor lines in

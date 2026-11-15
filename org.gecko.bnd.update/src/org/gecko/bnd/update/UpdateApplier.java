@@ -72,7 +72,11 @@ public final class UpdateApplier {
 		List<AppliedUpdate> results = new ArrayList<>();
 		List<Update> applicable = new ArrayList<>();
 		for (Update update : updates) {
-			if (!update.isProposed()) {
+			if (update.isShadowed()) {
+				results.add(new AppliedUpdate(update, AppliedUpdate.Status.NOT_PROPOSED,
+					"not used: " + update.shadowedBy()
+						+ " is higher, and bnd resolves to the highest version of all indexes"));
+			} else if (!update.isProposed()) {
 				results.add(new AppliedUpdate(update, AppliedUpdate.Status.NOT_PROPOSED,
 					"no version within the " + update.allowed()
 						.id() + " scope"));
@@ -306,6 +310,8 @@ public final class UpdateApplier {
 		return switch (origin.kind()) {
 			case LIBRARY -> "the index " + update.index() + " comes with the bnd library " + origin.source()
 				+ " (-library), not from the workspace - update the library to get a newer version";
+			case TOOLCHAIN -> "the bnd version of the build is set in " + origin.source()
+				+ ", not in an index - change it there";
 			default -> "the index " + update.index() + " is not part of the workspace (" + origin.source()
 				+ ") and is not changed";
 		};
