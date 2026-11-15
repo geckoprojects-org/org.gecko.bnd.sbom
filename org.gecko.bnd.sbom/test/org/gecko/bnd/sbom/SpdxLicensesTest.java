@@ -104,4 +104,16 @@ public class SpdxLicensesTest {
 		assertThat(SpdxLicenses.toExpression("MIT WITH Apache-2.0")).isNull();
 		assertThat(SpdxLicenses.toExpression("Apache-2.0 EPL-2.0")).isNull();
 	}
+
+	// #62
+	@Test
+	public void moreLicenseUrls() {
+		assertThat(SpdxLicenses.toId("https://www.antlr.org/license.html")).isEqualTo("BSD-3-Clause");
+		assertThat(SpdxLicenses.toId("http://antlr.org/license.html")).isEqualTo("BSD-3-Clause");
+		assertThat(SpdxLicenses.toId("https://spdx.org/licenses/MIT.html")).isEqualTo("MIT");
+		assertThat(SpdxLicenses.toId("https://www.mozilla.org/en-US/MPL/2.0/")).isEqualTo("MPL-2.0");
+		assertThat(SpdxLicenses.toId("http://www.eclipse.org/legal/edl-v10.html")).isEqualTo("BSD-3-Clause");
+		assertThat(SpdxLicenses.toId("https://creativecommons.org/publicdomain/zero/1.0/")).isEqualTo("CC0-1.0");
+		assertThat(SpdxLicenses.toId("https://example.org/license.html")).isNull();
+	}
 }

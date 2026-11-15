@@ -138,4 +138,17 @@ public class MetadataTest {
 				.get(Map.class);
 		}
 	}
+
+	// #62: with a Maven group the application's version is in Maven form, like its components' PURLs
+	@Test
+	public void applicationVersionInMavenFormWithGroup() {
+		assertThat(SbomModelBuilder.applicationVersion("org.eclipse.fennec.m2x", "0.1.1.SNAPSHOT"))
+			.isEqualTo("0.1.1-SNAPSHOT");
+		assertThat(SbomModelBuilder.applicationVersion("g", "1.2.3.202611151200")).isEqualTo("1.2.3-202611151200");
+		assertThat(SbomModelBuilder.applicationVersion("g", "1.2.3")).isEqualTo("1.2.3");
+		// without a group: the Bundle-Version as it is
+		assertThat(SbomModelBuilder.applicationVersion(null, "0.1.1.SNAPSHOT")).isEqualTo("0.1.1.SNAPSHOT");
+		assertThat(SbomModelBuilder.applicationVersion("g", "not a version")).isEqualTo("not a version");
+		assertThat(SbomModelBuilder.applicationVersion("g", null)).isNull();
+	}
 }

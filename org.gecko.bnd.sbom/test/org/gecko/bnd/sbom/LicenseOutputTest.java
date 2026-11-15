@@ -109,4 +109,25 @@ public class LicenseOutputTest {
 				.get(Map.class);
 		}
 	}
+
+	// #62
+	@Test
+	public void cycloneDxLicenseUrl() throws Exception {
+		assertThat(cdxLicenses(model(SbomLicense.spdx("BSD-3-Clause")
+			.withUrl("https://www.antlr.org/license.html"))))
+				.containsExactly(
+					Map.of("license", Map.of("id", "BSD-3-Clause", "url", "https://www.antlr.org/license.html")));
+		assertThat(cdxLicenses(model(SbomLicense.named("https://example.org/l")
+			.withUrl("https://example.org/l"))))
+				.containsExactly(Map.of("license", Map.of("name", "https://example.org/l", "url", "https://example.org/l")));
+	}
+
+	@Test
+	@SuppressWarnings("unchecked")
+	public void spdxLicenseRefSeeAlso() throws Exception {
+		Map<String, Object> doc = decode(new SpdxSerializer().serialize(model(SbomLicense.named("Vendor License")
+			.withUrl("https://example.org/l")), config(SbomFormat.SPDX)));
+		assertThat((List<Map<String, Object>>) doc.get("hasExtractedLicensingInfos")).singleElement()
+			.satisfies(info -> assertThat(info).containsEntry("seeAlsos", List.of("https://example.org/l")));
+	}
 }

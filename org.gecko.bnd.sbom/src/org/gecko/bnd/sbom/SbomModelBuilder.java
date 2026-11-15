@@ -31,6 +31,7 @@ import aQute.bnd.build.Project;
 import aQute.bnd.header.OSGiHeader;
 import aQute.bnd.osgi.Constants;
 import aQute.bnd.osgi.Jar;
+import aQute.bnd.version.Version;
 import org.gecko.bnd.sbom.model.MavenCoordinates;
 import org.gecko.bnd.sbom.model.SbomComponent;
 import org.gecko.bnd.sbom.model.SbomComponent.Category;
@@ -77,10 +78,12 @@ public final class SbomModelBuilder {
 	public SbomModel build() throws Exception {
 		// #15: identity of the application — overridable through -sbom, otherwise what the
 		// workspace declares for its artifacts (-groupid, Bundle-Version, Bundle-SCM, Bundle-DocURL)
+		String applicationGroup = firstOf(config.applicationGroup(), project.getProperty(Constants.GROUPID));
 		SbomModel model = new SbomModel()
 			.setApplicationName(firstOf(config.applicationName(), project.getName()))
-			.setApplicationGroup(firstOf(config.applicationGroup(), project.getProperty(Constants.GROUPID)))
-			.setApplicationVersion(firstOf(config.applicationVersion(), project.getProperty(Constants.BUNDLE_VERSION)))
+			.setApplicationGroup(applicationGroup)
+			.setApplicationVersion(firstOf(config.applicationVersion(),
+				applicationVersion(applicationGroup, project.getProperty(Constants.BUNDLE_VERSION))))
 			.setApplicationPurl(config.applicationPurl())
 			// CWE-200: URLs are published without credentials, query or fragment
 			.setVcsUrl(Limits.publishableUrl(scmUrl(project.getProperty(Constants.BUNDLE_SCM))))
@@ -218,6 +221,33 @@ public final class SbomModelBuilder {
 			}
 		}
 		return null;
+	}
+
+	/**
+	 * The application's version from the workspace's {@code Bundle-Version}. With a Maven group
+	 * ({@code -groupid}) the workspace's artifacts are Maven artifacts, and their PURLs carry the
+	 * Maven form of that version; the application follows, so that it matches its own
+	 * components: {@code 0.1.1.SNAPSHOT} → {@code 0.1.1-SNAPSHOT}, as bnd writes it into a POM
+	 * (major.minor.micro, then {@code -} and the qualifier). Without a group, or for a version
+	 * that is not an OSGi version, the {@code Bundle-Version} as it is.
+	 * <p>
+	 * No PURL is derived for the application: it is not an artifact published under those
+	 * coordinates, and a PURL would claim it is. {@code application.purl} sets one where there is
+	 * such an artifact (an image, a distribution).
+	 */
+	static String applicationVersion(String group, String bundleVersion) {
+		String version = firstOf(bundleVersion);
+		if (version == null || group == null) {
+			return version;
+		}
+		try {
+			Version v = Version.parseVersion(version);
+			String maven = v.getMajor() + "." + v.getMinor() + "." + v.getMicro();
+			return v.getQualifier() != null && !v.getQualifier()
+				.isEmpty() ? maven + "-" + v.getQualifier() : maven;
+		} catch (IllegalArgumentException e) {
+			return version;
+		}
 	}
 
 	/** The {@code url} of a {@code Bundle-SCM} header ({@code url=..., connection=...}). */

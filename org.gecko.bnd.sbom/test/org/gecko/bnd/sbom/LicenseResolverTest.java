@@ -27,6 +27,9 @@ import org.junit.jupiter.api.Test;
 import org.gecko.bnd.sbom.LicenseResolver;
 import org.gecko.bnd.sbom.model.SbomLicense;
 
+import aQute.bnd.osgi.EmbeddedResource;
+import aQute.bnd.osgi.Jar;
+
 /**
  * Unit tests for {@link LicenseResolver} seams using in-memory manifests / text (no workspace).
  */
@@ -202,5 +205,78 @@ public class LicenseResolverTest {
 
 	private static InputStream stream(String text) {
 		return new ByteArrayInputStream(text.getBytes(StandardCharsets.UTF_8));
+	}
+
+	// #62: ANTLR declares its license as a URL
+	@Test
+	public void knownLicenseUrlBecomesSpdxIdAndKeepsTheUrl() {
+		SbomLicense license = resolver.fromManifest(manifest("https://www.antlr.org/license.html"))
+			.get(0);
+		assertThat(license.spdxId()).isEqualTo("BSD-3-Clause");
+		assertThat(license.url()).isEqualTo("https://www.antlr.org/license.html");
+	}
+
+	@Test
+	public void unrecognizedUrlKeepsTheUrlAsUrl() {
+		SbomLicense license = resolver.fromManifest(manifest("https://example.org/our-license"))
+			.get(0);
+		assertThat(license.spdxId()).isNull();
+		assertThat(license.name()).isEqualTo("https://example.org/our-license");
+		assertThat(license.url()).isEqualTo("https://example.org/our-license");
+	}
+
+	@Test
+	public void linkAttributeIsTheUrl() {
+		SbomLicense license = resolver
+			.fromManifest(manifest("Apache-2.0;link=\"https://www.apache.org/licenses/LICENSE-2.0\""))
+			.get(0);
+		assertThat(license.spdxId()).isEqualTo("Apache-2.0");
+		assertThat(license.url()).isEqualTo("https://www.apache.org/licenses/LICENSE-2.0");
+		// a list of links is no single URL
+		assertThat(resolver.fromManifest(manifest("(Apache-2.0 OR EPL-2.0);link=\"https://a.example/x,https://b.example/y\""))
+			.get(0)
+			.url()).isNull();
+	}
+
+	@Test
+	public void embeddedPomWinsOverUnrecognizedBundleLicense() throws Exception {
+		try (Jar jar = jar("https://example.org/our-license", """
+			<project><licenses><license>
+			  <name>The Apache Software License, Version 2.0</name>
+			  <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+			</license></licenses></project>""")) {
+			assertThat(resolver.resolve(jar)).singleElement()
+				.satisfies(l -> {
+					assertThat(l.spdxId()).isEqualTo("Apache-2.0");
+					// the URL the bundle declared
+					assertThat(l.url()).isEqualTo("https://example.org/our-license");
+				});
+		}
+	}
+
+	@Test
+	public void unrecognizedPomDoesNotReplaceBundleLicense() throws Exception {
+		try (Jar jar = jar("https://example.org/our-license",
+			"<project><licenses><license><name>The BSD License</name></license></licenses></project>")) {
+			assertThat(resolver.resolve(jar)).singleElement()
+				.satisfies(l -> assertThat(l.name()).isEqualTo("https://example.org/our-license"));
+		}
+	}
+
+	@Test
+	public void recognizedBundleLicenseIsNotOverridden() throws Exception {
+		try (Jar jar = jar("EPL-2.0",
+			"<project><licenses><license><name>Apache-2.0</name></license></licenses></project>")) {
+			assertThat(resolver.resolve(jar)).singleElement()
+				.satisfies(l -> assertThat(l.spdxId()).isEqualTo("EPL-2.0"));
+		}
+	}
+
+	private static Jar jar(String bundleLicense, String pom) {
+		Jar jar = new Jar("lib");
+		jar.setManifest(manifest(bundleLicense));
+		jar.putResource("META-INF/maven/org.example/lib/pom.xml",
+			new EmbeddedResource(pom.getBytes(StandardCharsets.UTF_8), 0L));
+		return jar;
 	}
 }

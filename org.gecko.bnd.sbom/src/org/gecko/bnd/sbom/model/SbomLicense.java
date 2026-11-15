@@ -19,32 +19,49 @@ package org.gecko.bnd.sbom.model;
  * CycloneDX maps an id to {@code license.id}, an expression to {@code expression} and free text
  * to {@code license.name}; SPDX puts ids and expressions into the license expression and free
  * text into a {@code LicenseRef}.
+ * <p>
+ * An id or a free-text license may carry the URL it was declared with (a {@code Bundle-License}
+ * that is a URL, a POM's {@code <url>}): CycloneDX writes it as {@code license.url}, SPDX as
+ * {@code seeAlsos} of a {@code LicenseRef}.
  */
 public final class SbomLicense {
 
 	private final String	spdxId;
 	private final String	expression;
 	private final String	name;
+	private final String	url;
 
-	private SbomLicense(String spdxId, String expression, String name) {
+	private SbomLicense(String spdxId, String expression, String name, String url) {
 		this.spdxId = spdxId;
 		this.expression = expression;
 		this.name = name;
+		this.url = url;
 	}
 
 	/** A validated SPDX license id, e.g. {@code Apache-2.0}. */
 	public static SbomLicense spdx(String id) {
-		return new SbomLicense(id, null, null);
+		return new SbomLicense(id, null, null, null);
 	}
 
 	/** A validated SPDX license expression, e.g. {@code (Apache-2.0 OR EPL-2.0)}. */
 	public static SbomLicense expression(String expression) {
-		return new SbomLicense(null, expression, null);
+		return new SbomLicense(null, expression, null, null);
 	}
 
 	/** A free-text / URL license that could not be resolved to an SPDX id or expression. */
 	public static SbomLicense named(String name) {
-		return new SbomLicense(null, null, name);
+		return new SbomLicense(null, null, name, null);
+	}
+
+	/**
+	 * This license with the URL it was declared with; an expression has no single URL and
+	 * stays as it is, as does a license for a {@code null} URL.
+	 */
+	public SbomLicense withUrl(String url) {
+		if (url == null || expression != null) {
+			return this;
+		}
+		return new SbomLicense(spdxId, null, name, url);
 	}
 
 	public boolean isSpdx() {
@@ -68,6 +85,11 @@ public final class SbomLicense {
 	/** Free-text/URL license, or {@code null}. */
 	public String name() {
 		return name;
+	}
+
+	/** The URL the license was declared with, or {@code null}. */
+	public String url() {
+		return url;
 	}
 
 	/**

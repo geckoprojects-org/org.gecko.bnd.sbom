@@ -279,7 +279,8 @@ public final class CycloneDxSerializer implements SbomSerializer {
 	 * ({@code license.name}); an SPDX expression is a single {@code expression} entry, which may
 	 * not be mixed with license entries. Several ids and expressions therefore become one
 	 * expression joined with AND; only together with free text, which an expression cannot hold,
-	 * does an expression fall back to {@code license.name}.
+	 * does an expression fall back to {@code license.name}. A license entry carries the URL it
+	 * was declared with as {@code license.url}.
 	 */
 	private static List<Object> licenses(List<SbomLicense> licenses) {
 		List<Object> result = new ArrayList<>();
@@ -299,6 +300,8 @@ public final class CycloneDxSerializer implements SbomSerializer {
 		for (SbomLicense license : licenses) {
 			Map<String, Object> value = license.isSpdx() ? singletonMap("id", license.spdxId())
 				: singletonMap("name", license.isExpression() ? license.expression() : license.name());
+			// the URL the license was declared with, next to the id or name it was resolved to
+			putIfPresent(value, "url", license.url());
 			result.add(singletonMap("license", value));
 		}
 		return result;

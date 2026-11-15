@@ -62,6 +62,11 @@ import aQute.libg.glob.PathSet;
  * </ol>
  * The guiding rule stays: resolve to a validated SPDX id when confident, otherwise keep raw
  * text — never assert a wrong SPDX id. Returns an empty list when nothing is found.
+ * <p>
+ * A {@code Bundle-License} that is not recognized (ANTLR declares
+ * {@code https://www.antlr.org/license.html}) does not end the search: when a POM — next to the
+ * JAR or inside it — names the license as SPDX, that wins, and the URL the bundle declared is
+ * kept as the license's URL. Only when no POM does better does the free text stay.
  */
 public final class LicenseResolver {
 
@@ -73,19 +78,19 @@ public final class LicenseResolver {
 
 	public List<SbomLicense> resolve(Container container) throws Exception {
 		List<SbomLicense> fromManifest = fromManifest(container.getManifest());
-		if (!fromManifest.isEmpty()) {
+		if (recognized(fromManifest)) {
 			return fromManifest;
 		}
 		File file = container.getFile();
 		if (file == null || !file.isFile()) {
-			return Collections.emptyList();
+			return fromManifest;
 		}
 		List<SbomLicense> fromRepositoryPom = fromRepositoryPom(file);
-		if (!fromRepositoryPom.isEmpty()) {
-			return fromRepositoryPom;
+		if (fromManifest.isEmpty() ? !fromRepositoryPom.isEmpty() : recognized(fromRepositoryPom)) {
+			return withDeclaredUrl(fromManifest, fromRepositoryPom);
 		}
 		try (Jar jar = new Jar(file)) {
-			return fromJarContent(jar);
+			return fromManifest.isEmpty() ? fromJarContent(jar) : improved(fromManifest, fromEmbeddedPom(jar));
 		}
 	}
 
@@ -95,7 +100,38 @@ public final class LicenseResolver {
 	 */
 	public List<SbomLicense> resolve(Jar jar) throws Exception {
 		List<SbomLicense> fromManifest = fromManifest(jar.getManifest());
-		return fromManifest.isEmpty() ? fromJarContent(jar) : fromManifest;
+		if (recognized(fromManifest)) {
+			return fromManifest;
+		}
+		return fromManifest.isEmpty() ? fromJarContent(jar) : improved(fromManifest, fromEmbeddedPom(jar));
+	}
+
+	/** {@code true} if there are licenses and every one is an SPDX id or expression. */
+	static boolean recognized(List<SbomLicense> licenses) {
+		return !licenses.isEmpty() && licenses.stream()
+			.allMatch(l -> l.isSpdx() || l.isExpression());
+	}
+
+	/**
+	 * The POM's licenses instead of an unrecognized {@code Bundle-License}, if the POM names them
+	 * as SPDX; otherwise the declared ones.
+	 */
+	static List<SbomLicense> improved(List<SbomLicense> declared, List<SbomLicense> fromPom) {
+		return recognized(fromPom) ? withDeclaredUrl(declared, fromPom) : declared;
+	}
+
+	/**
+	 * Keeps the URL a bundle declared as its single license on the single license found
+	 * elsewhere: that is the URL the bundle points to.
+	 */
+	private static List<SbomLicense> withDeclaredUrl(List<SbomLicense> declared, List<SbomLicense> found) {
+		if (declared.size() != 1 || found.size() != 1 || declared.get(0)
+			.url() == null) {
+			return found;
+		}
+		return Collections.singletonList(found.get(0)
+			.withUrl(declared.get(0)
+				.url()));
 	}
 
 	private List<SbomLicense> fromJarContent(Jar jar) throws Exception {
@@ -115,14 +151,29 @@ public final class LicenseResolver {
 	 * link is recognized — as free text.
 	 */
 	static SbomLicense recognize(String value, String link) {
+		String url = isUrl(value) ? value : isUrl(link) ? link : null;
 		String recognized = SpdxLicenses.toExpression(value);
 		if (recognized == null) {
 			recognized = SpdxLicenses.toExpression(link);
 		}
 		if (recognized == null) {
-			return SbomLicense.named(value);
+			return SbomLicense.named(value)
+				.withUrl(url);
 		}
-		return SpdxLicenses.toId(recognized) != null ? SbomLicense.spdx(recognized) : SbomLicense.expression(recognized);
+		return SpdxLicenses.toId(recognized) != null ? SbomLicense.spdx(recognized)
+			.withUrl(url) : SbomLicense.expression(recognized);
+	}
+
+	/** One http(s) URL — not a list of them, as bnd's own {@code link} attributes are. */
+	static boolean isUrl(String value) {
+		if (value == null) {
+			return false;
+		}
+		String v = value.trim()
+			.toLowerCase(Locale.ROOT);
+		return (v.startsWith("https://") || v.startsWith("http://")) && v.indexOf(',') < 0
+			&& v.chars()
+				.noneMatch(Character::isWhitespace);
 	}
 
 	/** {@code <artifactId>-<version>.pom} next to the JAR, as Maven repositories store it. */

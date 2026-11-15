@@ -31,7 +31,9 @@ import java.util.regex.Pattern;
  * <li>SPDX ids ({@code epl-2.0} → {@code EPL-2.0})</li>
  * <li>common license names ({@code Eclipse Public License - v 2.0}, {@code The Apache Software
  * License, Version 2.0})</li>
- * <li>license URLs (opensource.org, apache.org, eclipse.org, gnu.org)</li>
+ * <li>license URLs (opensource.org, spdx.org, apache.org, eclipse.org, mozilla.org, gnu.org,
+ * creativecommons.org, antlr.org); http or https, with or without {@code www.}, a trailing
+ * slash or a {@code .html}/{@code .txt} suffix</li>
  * <li>SPDX license expressions made of known ids ({@code (Apache-2.0 OR EPL-2.0)})</li>
  * </ul>
  * Deliberately conservative: an unrecognized value returns {@code null} → the caller keeps it
@@ -40,8 +42,9 @@ import java.util.regex.Pattern;
  */
 public final class SpdxLicenses {
 
+	/** URL paths whose next segment is the SPDX id: {@code …/licenses/MIT}, {@code …/licenses/MIT.html} */
 	private static final List<String>			OPENSOURCE_PREFIXES	= List.of("opensource.org/licenses/",
-		"opensource.org/license/");
+		"opensource.org/license/", "spdx.org/licenses/");
 
 	/** lowercased id → canonical-cased SPDX id */
 	private static final Map<String, String>	KNOWN				= new HashMap<>();
@@ -97,8 +100,16 @@ public final class SpdxLicenses {
 		URLS.put("eclipse.org/org/documents/epl-2.0", "EPL-2.0");
 		URLS.put("eclipse.org/org/documents/epl-v10", "EPL-1.0");
 		URLS.put("eclipse.org/org/documents/edl-v10", "BSD-3-Clause");
+		URLS.put("eclipse.org/legal/edl-v10", "BSD-3-Clause");
 		URLS.put("opensource.org/licenses/mit-license", "MIT");
+		URLS.put("mit-license.org", "MIT");
 		URLS.put("mozilla.org/mpl/2.0", "MPL-2.0");
+		URLS.put("mozilla.org/en-us/mpl/2.0", "MPL-2.0");
+		URLS.put("creativecommons.org/publicdomain/zero/1.0", "CC0-1.0");
+		URLS.put("unlicense.org", "Unlicense");
+		// ANTLR (3 and 4) is licensed under the BSD 3-Clause license; its POM calls it only
+		// "The BSD License", which is ambiguous, so the license page is what identifies it.
+		URLS.put("antlr.org/license", "BSD-3-Clause");
 		// GNU Classpath's license page: GPL 2 with the Classpath exception (Java EE / Jakarta)
 		URLS.put("gnu.org/software/classpath/license", "GPL-2.0-only WITH Classpath-exception-2.0");
 	}

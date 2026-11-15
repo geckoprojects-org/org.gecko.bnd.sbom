@@ -261,7 +261,8 @@ public final class SpdxSerializer implements SbomSerializer {
 		}
 		List<String> parts = new ArrayList<>();
 		for (SbomLicense license : component.getLicenses()) {
-			parts.add(license.isSpdx() || license.isExpression() ? license.asOperand() : extracted.refFor(license.name()));
+			parts.add(license.isSpdx() || license.isExpression() ? license.asOperand()
+				: extracted.refFor(license.name(), license.url()));
 		}
 		if (parts.size() == 1 && component.getLicenses()
 			.get(0)
@@ -303,7 +304,7 @@ public final class SpdxSerializer implements SbomSerializer {
 		private final Map<String, String>	refByName	= new LinkedHashMap<>();
 		private final List<Object>			infos		= new ArrayList<>();
 
-		String refFor(String name) {
+		String refFor(String name, String url) {
 			String existing = refByName.get(name);
 			if (existing != null) {
 				return existing;
@@ -315,6 +316,11 @@ public final class SpdxSerializer implements SbomSerializer {
 			info.put("name", name);
 			// extractedText is required; we only have the declared name, so use it as the text.
 			info.put("extractedText", name);
+			if (url != null) {
+				List<Object> seeAlsos = new ArrayList<>();
+				seeAlsos.add(url);
+				info.put("seeAlsos", seeAlsos);
+			}
 			infos.add(info);
 			return ref;
 		}
