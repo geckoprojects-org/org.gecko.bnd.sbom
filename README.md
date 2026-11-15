@@ -34,9 +34,9 @@ The SBOM is written to the project's `generated/` folder as `<name>.bndrun.cdx.j
 | `includeOSGIMetadata` | `true`, `false` | `false` |
 | `timestamp` | ISO-8601 instant, e.g. `2026-01-01T00:00:00Z`, for reproducible builds | time of the export |
 | `serialNumber` | `content` (derived from format, level, application and components: an unchanged application keeps its serial number), `random` | `content` |
-| `application.name`, `application.group`, `application.version` | identity of the application in the metadata | bndrun name, `-groupid`, `Bundle-Version` |
+| `application.name`, `application.group`, `application.version` | identity of the application in the metadata | bndrun name, `-groupid`, `Bundle-Version` (with a `-groupid` in Maven form, `0.1.1.SNAPSHOT` → `0.1.1-SNAPSHOT`, as in the components' PURLs) |
 | `cyclonedx.version` | `1.6`, `1.7` (written with the matching `$schema`) | `1.6` |
-| `application.purl` | PURL of the application, e.g. of the image built from the bndrun (`"pkg:oci/..."`, quoted); also its `bom-ref` | none |
+| `application.purl` | PURL of the application, e.g. of the image built from the bndrun (`"pkg:oci/..."`, quoted); also its `bom-ref` | none: the application is not published under the workspace's Maven coordinates, so none is derived from them |
 | `property.<name>` | free properties of the BOM, e.g. `property.vcs:commit=${env;GITHUB_SHA}`; CycloneDX `metadata.properties`, SPDX document comment | none |
 | `maven.<bsn>` | `groupId:artifactId[:version]`: Maven coordinates for a bundle from a p2 or OBR repository that is also published to Maven (version defaults to the bundle's major.minor.micro) | none |
 
@@ -94,6 +94,13 @@ A complete example:
   by rebuilding the launch). `-runsystempackages` and `-runsystemcapabilities` add no
   components: they only declare exports from `-runfw`, `-runpath` or the JDK; the JDK itself
   is not part of the SBOM.
+- **Licenses** (`medium`): as SPDX ids where they can be told with confidence — from
+  `Bundle-License` (ids, expressions, known names and URLs), the artifact's POM next to the
+  jar or inside it, or a license file. A `Bundle-License` that is not recognized, e.g. a URL
+  like ANTLR's `https://www.antlr.org/license.html`, does not end the search: if a POM names
+  the license as SPDX, that id is used. The URL a license was declared with is kept
+  (CycloneDX `license.url`, SPDX `seeAlsos`); what stays unrecognized is written as free text,
+  never as a guessed id.
 - **Origin:** for every bundle the repository it was taken from (`osgi:repository:name`,
   `osgi:repository:kind`: `maven`, `p2`, `osgi`, `file`, `workspace`) and, where the
   repository knows it, the download URL as `distribution` reference.
