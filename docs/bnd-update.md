@@ -82,8 +82,18 @@ For a `FAILED` bndrun the unresolved requirements are the reason, e.g.
 `aQute.libg 7.4.0 -> osgi.wiring.package: org.slf4j; version=[2.0.0,3.0.0)`: nothing in the
 repositories exports `org.slf4j` in that range. After an update this is how a too narrow import
 range shows up. bnd's resolver reports it exactly, so no separate pre-check of import ranges is
-needed. Optional requirements (`resolution:=optional`) are left out: they do not fail a
-resolution and would only hide the one that does.
+needed. Requirements that only follow from the failure are left out, as they would hide the one
+that matters:
+
+- optional requirements (`resolution:=optional`): they do not fail a resolution;
+- the `osgi.ee` requirement of a multi-release supplement: bnd indexes a multi-release jar as one
+  resource per Java release (`junit-platform-commons__8` requires `JavaSE [1.8,9)`), and the
+  resolver lists those of other releases whenever it fails;
+- `-runrequires` entries when anything else is listed: the root that could not be satisfied
+  because of the requirements below it.
+
+A step that would leave nothing is not applied; a `-runrequires` entry alone (the required bundle
+does not exist) stays.
 
 One failure has a cause the resolver cannot name: a `-runfw` or `-runpath` entry that matches
 nothing in the repositories, e.g. `-runfw: org.apache.felix.framework;version='[7.0.5,7.0.5]'`

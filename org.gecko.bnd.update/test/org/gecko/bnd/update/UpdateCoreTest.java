@@ -35,7 +35,9 @@ import org.osgi.resource.Namespace;
 import org.osgi.resource.Requirement;
 
 import aQute.bnd.osgi.resource.CapReqBuilder;
+import aQute.bnd.osgi.resource.ResourceBuilder;
 import aQute.bnd.version.MavenVersion;
+import aQute.bnd.version.Version;
 
 public class UpdateCoreTest {
 
@@ -339,6 +341,40 @@ public class UpdateCoreTest {
 
 		assertThat(ResolveCheck.mandatory(List.of(optional, mandatory))).containsExactly(mandatory);
 		assertThat(ResolveCheck.mandatory(List.of(optional))).containsExactly(optional);
+	}
+
+	@Test
+	public void consequencesAreFilteredOut() throws Exception {
+		Requirement supplementEe = requirementOf("junit-platform-commons__8", "1.14.2",
+			new CapReqBuilder("osgi.ee").addDirective(Namespace.REQUIREMENT_FILTER_DIRECTIVE,
+				"(&(osgi.ee=JavaSE)(version>=1.8.0)(!(version>=9.0.0)))"));
+		Requirement ownEe = requirementOf("org.example.lib", "1.0.0", new CapReqBuilder("osgi.ee")
+			.addDirective(Namespace.REQUIREMENT_FILTER_DIRECTIVE, "(&(osgi.ee=JavaSE)(version>=25))"));
+		Requirement root = new CapReqBuilder("osgi.identity")
+			.addDirective(Namespace.REQUIREMENT_FILTER_DIRECTIVE, "(osgi.identity=org.eclipse.fennec.m2x.ocl.ide)")
+			.buildSyntheticRequirement();
+		Requirement framework = requirementOf("org.eclipse.emf.ecore", "2.41.0",
+			new CapReqBuilder("osgi.wiring.package").addDirective(Namespace.REQUIREMENT_FILTER_DIRECTIVE,
+				"(&(osgi.wiring.package=org.osgi.framework)(version>=1.5.0)(!(version>=2.0.0)))"));
+
+		assertThat(ResolveCheck.relevant(List.of(root, supplementEe, framework))).containsExactly(framework);
+		// an osgi.ee requirement of a regular bundle is a real cause
+		assertThat(ResolveCheck.relevant(List.of(root, ownEe))).containsExactly(ownEe);
+		// never emptied: a -runrequires entry alone is the cause (the bundle does not exist)
+		assertThat(ResolveCheck.relevant(List.of(root))).containsExactly(root);
+		assertThat(ResolveCheck.relevant(List.of(supplementEe))).containsExactly(supplementEe);
+	}
+
+	private static Requirement requirementOf(String bsn, String version, CapReqBuilder requirement)
+		throws Exception {
+		ResourceBuilder resource = new ResourceBuilder();
+		resource.addCapability(new CapReqBuilder("osgi.identity").addAttribute("osgi.identity", bsn)
+			.addAttribute("version", new Version(version))
+			.addAttribute("type", "osgi.bundle"));
+		resource.addRequirement(requirement);
+		return resource.build()
+			.getRequirements(requirement.getNamespace())
+			.get(0);
 	}
 
 	@Test

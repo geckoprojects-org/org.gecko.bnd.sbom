@@ -23,6 +23,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Predicate;
+import java.util.regex.Pattern;
 
 import org.osgi.resource.Requirement;
 import org.osgi.service.resolver.ResolutionException;
@@ -99,7 +101,7 @@ public final class ResolveCheck {
 				List<String> unresolved = new ArrayList<>();
 				if (resolution.exception instanceof ResolutionException re) {
 					FilterParser parser = new FilterParser();
-					List<Requirement> requirements = mandatory(re.getUnresolvedRequirements());
+					List<Requirement> requirements = relevant(re.getUnresolvedRequirements());
 					for (Requirement requirement : requirements) {
 						unresolved.add(who(requirement) + " -> " + requirement.getNamespace() + ": "
 							+ parser.parse(requirement));
@@ -129,10 +131,53 @@ public final class ResolveCheck {
 	 * optional (should not happen), all are kept, so that the list is never empty for nothing.
 	 */
 	static List<Requirement> mandatory(Collection<Requirement> requirements) {
-		List<Requirement> mandatory = requirements.stream()
-			.filter(r -> ResourceUtils.getResolution(r) != ResolutionDirective.optional)
+		return keep(new ArrayList<>(requirements),
+			r -> ResourceUtils.getResolution(r) != ResolutionDirective.optional);
+	}
+
+	/**
+	 * The requirements that explain a failed resolution, without the ones that only follow from
+	 * it:
+	 * <ol>
+	 * <li>optional requirements ({@link #mandatory});</li>
+	 * <li>the {@code osgi.ee} requirement of a multi-release supplement: bnd indexes a
+	 * multi-release jar as one resource per Java release ({@code junit-platform-commons__8}
+	 * requires {@code JavaSE [1.8,9)}); the resolver lists those for other releases than the
+	 * {@code -runee} whenever it fails, whatever the cause;</li>
+	 * <li>{@code -runrequires} entries when there is anything else: the root that could not be
+	 * satisfied because of the requirements below it.</li>
+	 * </ol>
+	 * Each step only applies if something remains, so that the list is never emptied.
+	 */
+	static List<Requirement> relevant(Collection<Requirement> requirements) {
+		List<Requirement> relevant = mandatory(requirements);
+		relevant = keep(relevant, r -> !isSupplementEe(r));
+		relevant = keep(relevant, r -> !"-runrequires".equals(who(r)));
+		return relevant;
+	}
+
+	/** {@code osgi.ee}, the execution environment namespace */
+	private static final String		EXECUTION_ENVIRONMENT		= "osgi.ee";
+
+	/** {@code bsn__<release>}, the resource bnd indexes for one release of a multi-release jar */
+	private static final Pattern MULTI_RELEASE_SUPPLEMENT = Pattern.compile(".+__\\d+");
+
+	private static boolean isSupplementEe(Requirement requirement) {
+		if (!EXECUTION_ENVIRONMENT.equals(requirement.getNamespace())
+			|| requirement.getResource() == null) {
+			return false;
+		}
+		IdentityCapability identity = ResourceUtils.getIdentityCapability(requirement.getResource());
+		return identity != null && identity.osgi_identity() != null && MULTI_RELEASE_SUPPLEMENT.matcher(identity.osgi_identity())
+			.matches();
+	}
+
+	/** The requirements that pass the filter, or all of them if none does. */
+	private static List<Requirement> keep(List<Requirement> requirements, Predicate<Requirement> filter) {
+		List<Requirement> kept = requirements.stream()
+			.filter(filter)
 			.toList();
-		return mandatory.isEmpty() ? new ArrayList<>(requirements) : mandatory;
+		return kept.isEmpty() ? requirements : kept;
 	}
 
 	/**
