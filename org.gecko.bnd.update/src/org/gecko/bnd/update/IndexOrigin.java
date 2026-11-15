@@ -30,7 +30,8 @@ import java.util.Locale;
  * @param kind see {@link Kind}
  * @param source for {@link Kind#LIBRARY}: the library, as {@code bsn version} (or the expanded
  *            directory's name when it is not a repository library); for {@link Kind#EXTERNAL}:
- *            the directory the index is in; {@code null} for {@link Kind#WORKSPACE}
+ *            the directory the index is in; for {@link Kind#TOOLCHAIN}: where the version is set
+ *            ({@code gradle.properties bnd_version}); {@code null} for {@link Kind#WORKSPACE}
  */
 public record IndexOrigin(Kind kind, String source) {
 
@@ -40,7 +41,12 @@ public record IndexOrigin(Kind kind, String source) {
 		/** an index contributed by a bnd {@code -library}, expanded in the bnd cache: read-only */
 		LIBRARY,
 		/** an index outside the workspace, or elsewhere in the bnd cache: read-only */
-		EXTERNAL
+		EXTERNAL,
+		/**
+		 * not an index: the bnd version of the workspace's build ({@code gradle.properties},
+		 * {@code settings.gradle}); reported, not changed by an update
+		 */
+		TOOLCHAIN
 	}
 
 	public static final IndexOrigin	WORKSPACE		= new IndexOrigin(Kind.WORKSPACE, null);

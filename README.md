@@ -136,7 +136,10 @@ java -jar org.gecko.bnd.update.cli.jar vulnerabilities --trivy trivy.json --sbom
 **Version policy:** only `micro` updates (same major.minor) by default; `minor` or `major` only
 where configured, per library if needed; variants such as guava `-jre`/`-android` or byte-buddy
 `-jdk5` are kept, date versions (`20040616`) are not taken for updates. Indexes a bnd `-library`
-brings along are reported with that library as origin, but never written.
+brings along are reported with that library as origin, but never written; an entry another index
+outranks is reported as shadowed, not as an update. Build-time libraries (in no application
+bndrun: tests, build path, the bnd toolchain itself) are listed separately with their latest
+version and can get their own scope (`buildtime;scope=minor`).
 
 ```
 -update-policy: default;scope=micro, com.fasterxml.jackson.core:*;scope=minor

@@ -34,6 +34,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.osgi.resource.Namespace;
 import org.osgi.resource.Requirement;
 
+import aQute.bnd.build.Workspace;
 import aQute.bnd.osgi.resource.CapReqBuilder;
 import aQute.bnd.osgi.resource.ResourceBuilder;
 import aQute.bnd.version.MavenVersion;
@@ -472,6 +473,175 @@ public class UpdateCoreTest {
 		ResolveCheck.missing("-runpath", "lib/x.jar;version=file", List.of(), missing);
 		ResolveCheck.missing("-runpath", null, List.of(), missing);
 		assertThat(missing).containsExactly("-runfw: org.apache.felix.framework;version=[7.0.5,7.0.5]");
+	}
+
+	@Test
+	public void buildtimeScope() {
+		VersionPolicy policy = VersionPolicy
+			.parse("default;scope=micro, buildtime;scope=minor, org.junit.jupiter:*;scope=major");
+		assertThat(policy.scopeFor("org.jacoco", "org.jacoco.core", Update.Usage.BUILD_TIME)).isEqualTo(Scope.MINOR);
+		assertThat(policy.scopeFor("org.jacoco", "org.jacoco.core", Update.Usage.RUNTIME)).isEqualTo(Scope.MICRO);
+		assertThat(policy.scopeFor("org.jacoco", "org.jacoco.core", Update.Usage.UNKNOWN)).isEqualTo(Scope.MICRO);
+		// a per-library entry comes first
+		assertThat(policy.scopeFor("org.junit.jupiter", "junit-jupiter-api", Update.Usage.BUILD_TIME))
+			.isEqualTo(Scope.MAJOR);
+		// --scope overrides the default, not the build-time scope
+		assertThat(policy.withDefault(Scope.MAJOR)
+			.buildtimeScope()).isEqualTo(Scope.MINOR);
+		assertThat(VersionPolicy.defaults()
+			.scopeFor("g", "a", Update.Usage.BUILD_TIME)).isEqualTo(Scope.MICRO);
+	}
+
+	@Test
+	public void shadowedByAnotherIndex() {
+		Library scrLibrary = new Library("org.apache.felix", "org.apache.felix.scr", "2.2.6");
+		Library scrCentral = new Library("org.apache.felix", "org.apache.felix.scr", "2.3.0");
+		Library emfCentral = new Library("org.eclipse.emf", "org.eclipse.emf.common", "2.29.0");
+		Library emfCentral2 = new Library("org.eclipse.emf", "org.eclipse.emf.common", "2.44.0");
+		Library emfLibrary = new Library("org.eclipse.emf", "org.eclipse.emf.common", "2.44.0");
+		Library jre = new Library("com.google.guava", "guava", "33.5.0-jre");
+		Library android = new Library("com.google.guava", "guava", "33.6.0-android");
+
+		Map<String, String> shadows = UpdateFinder.shadows(List.of(new UpdateFinder.Indexed(scrLibrary, "EMF"),
+			new UpdateFinder.Indexed(scrCentral, "Central"), new UpdateFinder.Indexed(emfCentral, "Central"),
+			new UpdateFinder.Indexed(emfCentral2, "Central"), new UpdateFinder.Indexed(emfLibrary, "EMF"),
+			new UpdateFinder.Indexed(jre, "Central"), new UpdateFinder.Indexed(android, "Other")));
+
+		assertThat(shadows).containsEntry(scrLibrary + "@EMF", "2.3.0 in Central")
+			// shadowed by another index, not by a second line of its own index
+			.containsEntry(emfCentral + "@Central", "2.44.0 in EMF")
+			.doesNotContainKey(scrCentral + "@Central")
+			.doesNotContainKey(emfCentral2 + "@Central")
+			.doesNotContainKey(emfLibrary + "@EMF")
+			// another variant does not shadow
+			.doesNotContainKey(jre + "@Central");
+	}
+
+	@Test
+	public void shadowedUpdatesReport(@TempDir Path ws) throws Exception {
+		Update shadowed = new Update(new Library("org.apache.felix", "org.apache.felix.scr", "2.2.6"), "EMF",
+			"cnf/cache/7.4.0/expanded/urn%resource%org.example.lib-1.1.0/template/x.maven",
+			new IndexOrigin(IndexOrigin.Kind.LIBRARY, "org.example.lib 1.1.0"), versions("2.2.18", "2.3.0"),
+			Scope.MICRO, null, v("2.3.0"), Update.Usage.RUNTIME, "2.3.0 in Central");
+		Update runtime = new Update(new Library("g", "rt", "1.0.0"), "Central", "cnf/central.mvn", IndexOrigin.WORKSPACE,
+			versions("1.0.1", "1.1.0"), Scope.MICRO, v("1.0.1"), v("1.1.0"), Update.Usage.RUNTIME, null);
+		Update outsideRuntime = new Update(new Library("g", "rt2", "1.0.0"), "Central", "cnf/central.mvn",
+			IndexOrigin.WORKSPACE, versions("2.0.0"), Scope.MICRO, null, v("2.0.0"), Update.Usage.RUNTIME, null);
+		Update junit = new Update(new Library("org.junit.jupiter", "junit-jupiter-api", "5.14.2"), "Central",
+			"cnf/central.mvn", IndexOrigin.WORKSPACE, versions("5.14.4", "6.1.3"), Scope.MICRO, v("5.14.4"), v("6.1.3"),
+			Update.Usage.BUILD_TIME, null);
+		Update bnd = new Update(new Toolchain("7.4.0", "gradle.properties bnd_version").library(),
+			"bnd toolchain", "gradle.properties", new IndexOrigin(IndexOrigin.Kind.TOOLCHAIN, "gradle.properties bnd_version"),
+			versions("7.5.0"), Scope.MICRO, null, v("7.5.0"), Update.Usage.BUILD_TIME, null);
+		List<Update> updates = List.of(shadowed, runtime, outsideRuntime, junit, bnd);
+
+		String md = Reports.markdown(updates);
+		assertThat(md).contains("| Library | Installed | Proposed | Allowed | Latest | Use | Repository |")
+			.contains("| `g:rt` | 1.0.0 | **1.0.1** | micro | 1.1.0 (minor) | runtime | Central |")
+			.contains("| `org.junit.jupiter:junit-jupiter-api` | 5.14.2 | **5.14.4** | micro | 6.1.3 (major) | build time | Central |")
+			.contains("### Build time: newer versions beyond the policy")
+			.contains("- `org.junit.jupiter:junit-jupiter-api:5.14.2` → 6.1.3 (major, build time only)")
+			.contains("- `biz.aQute.bnd:biz.aQute.bndlib:7.4.0` (toolchain gradle.properties bnd_version, read-only) → 7.5.0 (minor, build time only)")
+			.contains("### Outside the version policy")
+			.contains("- `g:rt2:1.0.0` → 2.0.0 needs a major update")
+			.contains("### Shadowed by another index")
+			.contains("- `org.apache.felix:org.apache.felix.scr:2.2.6` in EMF (library org.example.lib 1.1.0, read-only) - the workspace uses 2.3.0 in Central");
+		// a shadowed or build-time entry is not "outside the version policy"
+		assertThat(md.substring(md.indexOf("### Outside the version policy"), md.indexOf("### Shadowed")))
+			.doesNotContain("scr")
+			.doesNotContain("bndlib");
+		assertThat(md.substring(0, md.indexOf("### Build time"))).doesNotContain("org.apache.felix.scr");
+		assertThat(Reports.json(updates)).contains("\"usage\":\"build_time\"")
+			.contains("\"shadowedBy\":\"2.3.0 in Central\"");
+
+		// apply: a shadowed entry and the toolchain are not written
+		Files.createDirectories(ws.resolve("cnf"));
+		Files.writeString(ws.resolve("cnf/build.bnd"), "");
+		Files.writeString(ws.resolve("gradle.properties"), "bnd_version=7.4.0\n");
+		Update bndProposed = new Update(bnd.library(), bnd.repository(), bnd.index(), bnd.origin(), bnd.available(),
+			Scope.MINOR, v("7.5.0"), v("7.5.0"), Update.Usage.BUILD_TIME, null);
+		ApplyReport report = new UpdateApplier(ws.toFile(), null).apply(List.of(shadowed, bndProposed),
+			UpdateApplier.Mode.EACH);
+		assertThat(report.updates()
+			.get(0)
+			.status()).isEqualTo(AppliedUpdate.Status.NOT_PROPOSED);
+		assertThat(report.updates()
+			.get(0)
+			.reason()).contains("not used: 2.3.0 in Central is higher");
+		assertThat(report.updates()
+			.get(1)
+			.status()).isEqualTo(AppliedUpdate.Status.READ_ONLY_INDEX);
+		assertThat(report.updates()
+			.get(1)
+			.reason()).contains("set in gradle.properties bnd_version");
+		assertThat(Files.readString(ws.resolve("gradle.properties"))).isEqualTo("bnd_version=7.4.0\n");
+		assertThat(Reports.markdown(report)).doesNotContain("org.apache.felix.scr:2.2.6` → null needs");
+	}
+
+	@Test
+	public void applicationBndruns(@TempDir Path ws) throws Exception {
+		Files.createDirectories(ws.resolve("cnf"));
+		Files.writeString(ws.resolve("cnf/build.bnd"), "");
+		Path app = Files.createDirectories(ws.resolve("app"));
+		Files.writeString(app.resolve("bnd.bnd"), "");
+		Files.writeString(app.resolve("app.bndrun"), "-sbom: level=medium\n"
+			+ "-runfw: org.apache.felix.framework\n"
+			+ "-runbundles: org.apache.felix.scr;version='[2.3.0,2.3.1)',org.example.app;version=snapshot\n");
+		Files.writeString(app.resolve("test.bndrun"), "-runfw: org.apache.felix.framework\n"
+			+ "-runbundles: junit-jupiter-api;version='[5.14.2,5.14.3)',org.osgi.test.junit5;version='[1.3.0,1.3.1)'\n");
+		Files.writeString(app.resolve("other.bndrun"), "-runbundles: org.example.tool;version='[1.0.0,1.0.1)'\n");
+
+		try (Workspace workspace = new Workspace(ws.toFile())) {
+			RuntimeArtifacts runtime = RuntimeArtifacts.of(workspace);
+			// with an -sbom bndrun, only those are the application
+			assertThat(runtime.bndruns()).containsExactly("app/app.bndrun");
+			assertThat(runtime.contains("org.apache.felix.scr", new Version("2.3.0"))).isTrue();
+			assertThat(runtime.contains("org.apache.felix.scr", new Version("2.2.6"))).isFalse();
+			assertThat(runtime.contains("org.apache.felix.framework", new Version("7.0.5"))).isTrue();
+			assertThat(runtime.contains("junit-jupiter-api", new Version("5.14.2"))).isFalse();
+			assertThat(runtime.contains("org.example.tool", new Version("1.0.0"))).isFalse();
+		}
+
+		// without any -sbom bndrun: every bndrun that is not a test run
+		Files.writeString(app.resolve("app.bndrun"), "-runbundles: org.apache.felix.scr;version='[2.3.0,2.3.1)'\n");
+		try (Workspace workspace = new Workspace(ws.toFile())) {
+			assertThat(RuntimeArtifacts.of(workspace)
+				.bndruns()).containsExactlyInAnyOrder("app/app.bndrun", "app/other.bndrun");
+		}
+	}
+
+	@Test
+	public void testRunsAreRecognized() {
+		for (String bsn : List.of("junit-jupiter-api", "junit-platform-commons", "org.junit.jupiter.api", "junit",
+			"org.opentest4j", "biz.aQute.tester.junit-platform", "org.osgi.test.junit5", "org.osgi.test.common",
+			"org.osgi.test.junit5.cm", "assertj-core", "org.mockito.mockito-core", "org.hamcrest")) {
+			assertThat(RuntimeArtifacts.isTestRun(RuntimeArtifacts.clauses(bsn + ";version='[1,2)'"))).as(bsn)
+				.isTrue();
+		}
+		assertThat(RuntimeArtifacts.isTestRun(RuntimeArtifacts
+			.clauses("org.apache.felix.scr;version='[2.3.0,2.3.1)',junitlike.bundle;version=1"))).isFalse();
+	}
+
+	@Test
+	public void toolchainIsDetected(@TempDir Path ws) throws Exception {
+		assertThat(Toolchain.detect(ws.toFile())).isNull();
+
+		Files.writeString(ws.resolve("settings.gradle"),
+			"pluginManagement {\n  plugins {\n    id 'biz.aQute.bnd.workspace' version '7.3.0'\n  }\n}\n");
+		assertThat(Toolchain.detect(ws.toFile())).isEqualTo(new Toolchain("7.3.0", "settings.gradle"));
+
+		// gradle.properties wins; a property reference is not a version
+		Files.writeString(ws.resolve("gradle.properties"), "bnd_version=7.4.0\nother=x\n");
+		assertThat(Toolchain.detect(ws.toFile())).isEqualTo(new Toolchain("7.4.0", "gradle.properties bnd_version"));
+		Files.writeString(ws.resolve("gradle.properties"), "bnd_version=${other}\n");
+		assertThat(Toolchain.detect(ws.toFile())).isEqualTo(new Toolchain("7.3.0", "settings.gradle"));
+
+		Path maven = Files.createDirectories(ws.resolve("maven"));
+		Files.writeString(maven.resolve("pom.xml"),
+			"<project><properties><bnd.version>7.4.0</bnd.version></properties></project>");
+		assertThat(Toolchain.detect(maven.toFile())).isEqualTo(new Toolchain("7.4.0", "pom.xml bnd.version"));
+		assertThat(Toolchain.detect(maven.toFile())
+			.library()).isEqualTo(new Library("biz.aQute.bnd", "biz.aQute.bndlib", "7.4.0"));
 	}
 
 	private static Update update(String g, String a, String from, String to) {
