@@ -144,17 +144,7 @@ public final class Reports {
 		if (!outside.isEmpty()) {
 			md.append("\n### Outside the version policy\n\n");
 			for (Update u : outside) {
-				md.append("- `")
-					.append(u.library())
-					.append("` → ")
-					.append(u.latest())
-					.append(" needs a ")
-					.append(u.latestScope()
-						.id())
-					.append(" update (allowed: ")
-					.append(u.allowed()
-						.id())
-					.append(")\n");
+				md.append(outsideLine(u));
 			}
 		}
 		List<Update> shadowed = updates.stream()
@@ -176,6 +166,35 @@ public final class Reports {
 			}
 		}
 		return md.toString();
+	}
+
+	/**
+	 * {@code - `g:a:v` (origin, read-only) → latest needs a minor update (allowed: micro)}, and
+	 * for an index the workspace does not own, where the change belongs.
+	 */
+	private static String outsideLine(Update u) {
+		StringBuilder line = new StringBuilder("- `").append(u.library())
+			.append("`")
+			.append(readOnlyNote(u))
+			.append(" → ")
+			.append(u.latest())
+			.append(" needs a ")
+			.append(u.latestScope()
+				.id())
+			.append(" update (allowed: ")
+			.append(u.allowed()
+				.id())
+			.append(")");
+		IndexOrigin origin = u.origin();
+		if (origin != null && !origin.isWritable()) {
+			line.append(switch (origin.kind()) {
+				case LIBRARY -> " - the change belongs into that library (then pick up its new version)";
+				case TOOLCHAIN -> " - change the bnd version in " + origin.source();
+				default -> " - the index is not part of the workspace";
+			});
+		}
+		return line.append("\n")
+			.toString();
 	}
 
 	private static String usage(Update u) {
@@ -389,21 +408,7 @@ public final class Reports {
 		if (!outside.isEmpty()) {
 			md.append("\n### Outside the version policy\n\n");
 			for (AppliedUpdate a : outside) {
-				md.append("- `")
-					.append(a.update()
-						.library())
-					.append("` → ")
-					.append(a.update()
-						.latest())
-					.append(" needs a ")
-					.append(a.update()
-						.latestScope()
-						.id())
-					.append(" update (allowed: ")
-					.append(a.update()
-						.allowed()
-						.id())
-					.append(")\n");
+				md.append(outsideLine(a.update()));
 			}
 		}
 		if (!other.isEmpty()) {
