@@ -298,6 +298,42 @@ public class BsiTr03183Test {
 		assertThat(reporter.getErrors()).hasSize(2);
 	}
 
+	@Test
+	@SuppressWarnings("unchecked")
+	public void cycloneDxHashOnTheDistributionReference() throws Exception {
+		SbomComponent withUrl = new SbomComponent().setBsn("slf4j.api")
+			.setVersion("2.0.17")
+			.setFilename("slf4j-api-2.0.17.jar")
+			.setSha512("abc")
+			.setDistributionUrl("https://repo.maven.apache.org/maven2/org/slf4j/slf4j-api/2.0.17/slf4j-api-2.0.17.jar");
+		SbomComponent withoutUrl = new SbomComponent().setBsn("example.app")
+			.setVersion("1.0.0")
+			.setFilename("example.app.jar")
+			.setSha512("def");
+		SbomModel model = new SbomModel().setApplicationName("app")
+			.addComponent(withUrl)
+			.addComponent(withoutUrl)
+			.addComponent(new SbomComponent().setBsn("JavaSE")
+				.setVersion("21.0.0")
+				.setLogical(true));
+
+		List<Map<String, Object>> components = (List<Map<String, Object>>) decode(
+			new CycloneDxSerializer().serialize(model, medium(SbomFormat.CYCLONEDX))).get("components");
+
+		// TR table 9: the hash of the deployable component on its distribution reference
+		assertThat((List<Object>) components.get(0)
+			.get("externalReferences")).containsExactly(Map.of("type", "distribution", "url",
+				withUrl.getDistributionUrl(), "hashes", List.of(Map.of("alg", "SHA-512", "content", "abc"))));
+		// without a download URL the reference names the file
+		assertThat((List<Object>) components.get(1)
+			.get("externalReferences")).containsExactly(Map.of("type", "distribution", "url", "example.app.jar",
+				"hashes", List.of(Map.of("alg", "SHA-512", "content", "def"))));
+		// still in "hashes", too
+		assertThat(components.get(1)).containsKey("hashes");
+		// no file, no distribution reference
+		assertThat(components.get(2)).doesNotContainKey("externalReferences");
+	}
+
 	// --- scope of delivery of the framework ---
 
 	@Test

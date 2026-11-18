@@ -53,6 +53,11 @@ public final class CycloneDxSerializer implements SbomSerializer {
 	 * §3.2.1), not the exact version of a delivered file.
 	 */
 	public static final String		PROPERTY_VERSION_KIND	= "osgi:version:kind";
+	/**
+	 * BSI TR-03183-2 table 9: the licences of a component are its distribution licences,
+	 * {@code acknowledgement: concluded}.
+	 */
+	static final String				CONCLUDED				= "concluded";
 	/** {@code provided}: outside the scope of delivery, provided by the user's environment */
 	public static final String		PROPERTY_DELIVERY		= "osgi:delivery";
 
@@ -319,8 +324,20 @@ public final class CycloneDxSerializer implements SbomSerializer {
 		if (!properties.isEmpty()) {
 			node.put("properties", properties);
 		}
-		if (component.getDistributionUrl() != null) {
-			node.put("externalReferences", listOf(reference("distribution", component.getDistributionUrl())));
+		// #9 where the artifact can be downloaded; BSI TR-03183-2 table 9: the hash of the
+		// deployable component belongs to its distribution reference (also kept in "hashes").
+		// Without a download URL the reference names the file, a relative IRI reference.
+		String distribution = component.getDistributionUrl() != null ? component.getDistributionUrl()
+			: component.getSha512() != null ? component.getFilename() : null;
+		if (distribution != null) {
+			Map<String, Object> reference = reference("distribution", distribution);
+			if (component.getSha512() != null) {
+				Map<String, Object> hash = new LinkedHashMap<>();
+				hash.put("alg", "SHA-512");
+				hash.put("content", component.getSha512());
+				reference.put("hashes", listOf(hash));
+			}
+			node.put("externalReferences", listOf(reference));
 		}
 		// TODO(includeOSGIMetadata): Import-Package ranges / Require-Capability as namespaced
 		//   properties; package/class provenance format-natively via CycloneDX `pedigree`.
@@ -347,7 +364,9 @@ public final class CycloneDxSerializer implements SbomSerializer {
 				: licenses.stream()
 					.map(SbomLicense::asOperand)
 					.collect(Collectors.joining(" AND "));
-			result.add(singletonMap("expression", expression));
+			Map<String, Object> entry = singletonMap("expression", expression);
+			entry.put("acknowledgement", CONCLUDED);
+			result.add(entry);
 			return result;
 		}
 		for (SbomLicense license : licenses) {
@@ -355,6 +374,7 @@ public final class CycloneDxSerializer implements SbomSerializer {
 				: singletonMap("name", license.isExpression() ? license.expression() : license.name());
 			// the URL the license was declared with, next to the id or name it was resolved to
 			putIfPresent(value, "url", license.url());
+			value.put("acknowledgement", CONCLUDED);
 			result.add(singletonMap("license", value));
 		}
 		return result;

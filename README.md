@@ -82,7 +82,12 @@ The SBOM is written to the project's `generated/` folder as `<name>.bndrun.cdx.j
 TR-03183-2 has no version ranges: delivered components carry their exact, resolved version,
 components outside the delivery their minimum version.
 
-`validate=bsi-tr-03183-2` reports what is still missing, e.g. a bundle without creator or license.
+In CycloneDX the SHA-512 of a delivered file is also written to its `distribution` external
+reference (TR table 9), whose URL is the download URL or else the file name, and licences carry
+`acknowledgement: concluded`, the distribution licence.
+
+`validate=bsi-tr-03183-2` reports what is still missing, e.g. a bundle without creator or license,
+as warnings; `validate.strict=true` makes them build errors.
 The TR requires CycloneDX 1.6 or SPDX 3.0.1 or later: with `format=spdx` set
 `spdx.version=3.0.1`. The SPDX 3 document follows the TR's mapping tables — the creator as
 `Organization` with an `email` (or URL) external identifier in `createdBy`/`originatedBy`,
