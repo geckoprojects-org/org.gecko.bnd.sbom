@@ -64,6 +64,13 @@ public final class SbomConfig {
 	static final String			CYCLONEDX_VERSION	= "cyclonedx.version";
 	/** Supported CycloneDX versions; the first is the default. */
 	public static final List<String>	CYCLONEDX_VERSIONS	= List.of("1.6", "1.7");
+	/** SPDX specification version of the output. */
+	static final String			SPDX_VERSION	= "spdx.version";
+	/**
+	 * Supported SPDX versions; the first is the default. 3.0.1 is what BSI TR-03183-2 asks for;
+	 * 2.3 stays the default while SCA tools rarely read SPDX 3.
+	 */
+	public static final List<String>	SPDX_VERSIONS	= List.of("2.3", "3.0.1");
 	static final String			APP_NAME		= "application.name";
 	static final String			APP_GROUP		= "application.group";
 	static final String			APP_VERSION		= "application.version";
@@ -100,7 +107,7 @@ public final class SbomConfig {
 	static final String			SERIAL_RANDOM	= "random";
 
 	private static final List<String>	KEYS	= List.of(LEVEL, FORMAT, INCLUDE_OSGI, TIMESTAMP, SERIAL_NUMBER, APP_NAME,
-		APP_GROUP, APP_VERSION, APP_PURL, CYCLONEDX_VERSION, CREATOR, VALIDATE, VALIDATE_STRICT, FRAMEWORK);
+		APP_GROUP, APP_VERSION, APP_PURL, CYCLONEDX_VERSION, SPDX_VERSION, CREATOR, VALIDATE, VALIDATE_STRICT, FRAMEWORK);
 
 	private final SbomLevel		level;
 	private final SbomFormat	format;
@@ -111,6 +118,7 @@ public final class SbomConfig {
 	private final String		applicationGroup;
 	private final String		applicationVersion;
 	private final String		cyclonedxVersion;
+	private final String		spdxVersion;
 	private final String		applicationPurl;
 	private final Map<String, String>	properties;
 	private final Map<String, String>	mavenMappings;
@@ -121,7 +129,7 @@ public final class SbomConfig {
 
 	private SbomConfig(SbomLevel level, SbomFormat format, boolean includeOSGIMetadata, Instant created,
 		boolean randomSerialNumber, String applicationName, String applicationGroup, String applicationVersion,
-		String cyclonedxVersion, String applicationPurl, Map<String, String> properties,
+		String cyclonedxVersion, String spdxVersion, String applicationPurl, Map<String, String> properties,
 		Map<String, String> mavenMappings, String creator, String validate, boolean validateStrict,
 		boolean frameworkProvided) {
 		this.level = level;
@@ -134,6 +142,7 @@ public final class SbomConfig {
 		this.applicationGroup = applicationGroup;
 		this.applicationVersion = applicationVersion;
 		this.cyclonedxVersion = cyclonedxVersion;
+		this.spdxVersion = spdxVersion;
 		this.applicationPurl = applicationPurl;
 		this.properties = Collections.unmodifiableMap(new LinkedHashMap<>(properties));
 		this.mavenMappings = Collections.unmodifiableMap(new LinkedHashMap<>(mavenMappings));
@@ -151,7 +160,7 @@ public final class SbomConfig {
 	public static SbomConfig of(SbomLevel level, SbomFormat format, boolean includeOSGIMetadata, String timestamp) {
 		return new SbomConfig(level, format, includeOSGIMetadata,
 			timestamp != null ? Instant.parse(timestamp) : Instant.now(), false, null, null, null,
-			CYCLONEDX_VERSIONS.get(0), null, Map.of(), Map.of(), null, null, false, false);
+			CYCLONEDX_VERSIONS.get(0), SPDX_VERSIONS.get(0), null, Map.of(), Map.of(), null, null, false, false);
 	}
 
 	public static SbomConfig from(Project project, Map<String, String> options) {
@@ -218,6 +227,8 @@ public final class SbomConfig {
 
 		String cyclonedxVersion = value(reporter, values, CYCLONEDX_VERSION, CYCLONEDX_VERSIONS.get(0),
 			v -> CYCLONEDX_VERSIONS.contains(v) ? Optional.of(v) : Optional.empty(), CYCLONEDX_VERSIONS.stream());
+		String spdxVersion = value(reporter, values, SPDX_VERSION, SPDX_VERSIONS.get(0),
+			v -> SPDX_VERSIONS.contains(v) ? Optional.of(v) : Optional.empty(), SPDX_VERSIONS.stream());
 
 		// an email address or an http(s) URL, as BSI TR-03183-2 §5.2.1 asks for
 		String creator = value(reporter, values, CREATOR, null,
@@ -234,7 +245,7 @@ public final class SbomConfig {
 
 		return new SbomConfig(level, format, includeOSGIMetadata, created != null ? created : Instant.now(),
 			SERIAL_RANDOM.equals(serialNumber), text(values, APP_NAME), text(values, APP_GROUP),
-			text(values, APP_VERSION), cyclonedxVersion, applicationPurl, properties, mavenMappings, creator, validate,
+			text(values, APP_VERSION), cyclonedxVersion, spdxVersion, applicationPurl, properties, mavenMappings, creator, validate,
 			validateStrict, FRAMEWORK_PROVIDED.equals(framework));
 	}
 
@@ -375,8 +386,28 @@ public final class SbomConfig {
 			throw new IllegalArgumentException("Unsupported CycloneDX version " + version + ", supported: " + CYCLONEDX_VERSIONS);
 		}
 		return new SbomConfig(level, format, includeOSGIMetadata, created, randomSerialNumber, applicationName,
-			applicationGroup, applicationVersion, version, applicationPurl, properties, mavenMappings, creator, validate,
+			applicationGroup, applicationVersion, version, spdxVersion, applicationPurl, properties, mavenMappings, creator, validate,
 			validateStrict, frameworkProvided);
+	}
+
+	/** SPDX specification version to write ({@code spdx.version}), default 2.3. */
+	public String spdxVersion() {
+		return spdxVersion;
+	}
+
+	/** {@code true} when SPDX 3 (JSON-LD) is written. */
+	public boolean isSpdx3() {
+		return !"2.3".equals(spdxVersion);
+	}
+
+	/** A copy writing the given SPDX version (for tests and the Maven/Gradle wrappers). */
+	public SbomConfig withSpdxVersion(String version) {
+		if (!SPDX_VERSIONS.contains(version)) {
+			throw new IllegalArgumentException("Unsupported SPDX version " + version + ", supported: " + SPDX_VERSIONS);
+		}
+		return new SbomConfig(level, format, includeOSGIMetadata, created, randomSerialNumber, applicationName,
+			applicationGroup, applicationVersion, cyclonedxVersion, version, applicationPurl, properties, mavenMappings,
+			creator, validate, validateStrict, frameworkProvided);
 	}
 
 	/** {@code application.name} from {@code -sbom} or the options, or {@code null}. */
@@ -397,7 +428,7 @@ public final class SbomConfig {
 	/** A copy with a random serial number (for tests and the Maven/Gradle wrappers). */
 	public SbomConfig withRandomSerialNumber() {
 		return new SbomConfig(level, format, includeOSGIMetadata, created, true, applicationName, applicationGroup,
-			applicationVersion, cyclonedxVersion, applicationPurl, properties, mavenMappings, creator, validate,
+			applicationVersion, cyclonedxVersion, spdxVersion, applicationPurl, properties, mavenMappings, creator, validate,
 			validateStrict, frameworkProvided);
 	}
 
@@ -407,14 +438,14 @@ public final class SbomConfig {
 			throw new IllegalArgumentException("Unsupported validate value " + validate + ", supported: " + VALIDATE_BSI);
 		}
 		return new SbomConfig(level, format, includeOSGIMetadata, created, randomSerialNumber, applicationName,
-			applicationGroup, applicationVersion, cyclonedxVersion, applicationPurl, properties, mavenMappings, creator,
+			applicationGroup, applicationVersion, cyclonedxVersion, spdxVersion, applicationPurl, properties, mavenMappings, creator,
 			validate, strict, frameworkProvided);
 	}
 
 	/** A copy with the framework delivered or provided (for tests and the Maven/Gradle wrappers). */
 	public SbomConfig withFrameworkProvided(boolean provided) {
 		return new SbomConfig(level, format, includeOSGIMetadata, created, randomSerialNumber, applicationName,
-			applicationGroup, applicationVersion, cyclonedxVersion, applicationPurl, properties, mavenMappings, creator,
+			applicationGroup, applicationVersion, cyclonedxVersion, spdxVersion, applicationPurl, properties, mavenMappings, creator,
 			validate, validateStrict, provided);
 	}
 

@@ -9,7 +9,7 @@
 
 A bnd exporter plugin that writes a Software Bill of Materials (SBOM) for the **resolved OSGi
 application** of a `.bndrun`: the resolved `-runbundles` plus the framework layer (`-runfw`,
-`-runpath`). Output formats are CycloneDX 1.6 and SPDX 2.3 (JSON).
+`-runpath`). Output formats are CycloneDX 1.6/1.7 and SPDX 2.3 or 3.0.1 (JSON / JSON-LD).
 
 | | |
 |---|---|
@@ -43,6 +43,7 @@ The SBOM is written to the project's `generated/` folder as `<name>.bndrun.cdx.j
 | `serialNumber` | `content` (derived from format, level, application and components: an unchanged application keeps its serial number), `random` | `content` |
 | `application.name`, `application.group`, `application.version` | identity of the application in the metadata | bndrun name, `-groupid`, `Bundle-Version` (with a `-groupid` in Maven form, `0.1.1.SNAPSHOT` → `0.1.1-SNAPSHOT`, as in the components' PURLs) |
 | `cyclonedx.version` | `1.6`, `1.7` (written with the matching `$schema`) | `1.6` |
+| `spdx.version` | `2.3` (JSON), `3.0.1` (JSON-LD, as BSI TR-03183-2 requires); 2.3 stays the default while few SCA tools read SPDX 3 | `2.3` |
 | `application.purl` | PURL of the application, e.g. of the image built from the bndrun (`"pkg:oci/..."`, quoted); also its `bom-ref` | none: the application is not published under the workspace's Maven coordinates, so none is derived from them |
 | `property.<name>` | free properties of the BOM, e.g. `property.vcs:commit=${env;GITHUB_SHA}`; CycloneDX `metadata.properties`, SPDX document comment | none |
 | `creator` | creator of the SBOM and of the application, an email address or an http(s) URL (BSI TR-03183-2 §5.2.1); CycloneDX `metadata.manufacturer` | at `medium` from the project the `.bndrun` lives in: `Bundle-Vendor` as name, an email address from `Bundle-ContactAddress`, else a URL from there or `Bundle-DocURL` |
@@ -82,8 +83,13 @@ TR-03183-2 has no version ranges: delivered components carry their exact, resolv
 components outside the delivery their minimum version.
 
 `validate=bsi-tr-03183-2` reports what is still missing, e.g. a bundle without creator or license.
-The TR requires SPDX 3.0.1 or later; `format=spdx` currently writes SPDX 2.3, so use
-`format=cyclonedx` for a conformant SBOM.
+The TR requires CycloneDX 1.6 or SPDX 3.0.1 or later: with `format=spdx` set
+`spdx.version=3.0.1`. The SPDX 3 document follows the TR's mapping tables — the creator as
+`Organization` with an `email` (or URL) external identifier in `createdBy`/`originatedBy`,
+the delivered file as `software_File` (`hasDistributionArtifact`) with name, SHA-512 and the
+file properties in `software_additionalPurpose` (`executable`, `archive`, `container` or
+`firmware`), licences as `hasConcludedLicense`/`hasDeclaredLicense`, and `contains`/`dependsOn`
+with their `completeness`.
 
 ```
 -sbom: level=medium, creator=security@example.org, validate=bsi-tr-03183-2

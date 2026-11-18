@@ -50,9 +50,9 @@ public final class BsiTr03183Validator {
 			return findings;
 		}
 		// TR §4: SPDX ≥ 3.0.1 or CycloneDX ≥ 1.6 (the CycloneDX versions offered are all ≥ 1.6)
-		if (config.format() == SbomFormat.SPDX) {
-			findings.add("BSI TR-03183-2 requires SPDX 3.0.1 or later; this exporter writes SPDX 2.3 — use "
-				+ "format=cyclonedx for a conformant SBOM");
+		if (config.format() == SbomFormat.SPDX && !config.isSpdx3()) {
+			findings.add("BSI TR-03183-2 requires SPDX 3.0.1 or later; spdx.version=" + config.spdxVersion()
+				+ " is written — set spdx.version=3.0.1, or use format=cyclonedx");
 		}
 		// TR §5.2.1
 		if (model.getCreator() == null || !model.getCreator()

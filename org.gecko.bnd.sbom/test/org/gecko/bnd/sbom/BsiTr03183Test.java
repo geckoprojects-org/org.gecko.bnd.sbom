@@ -268,7 +268,8 @@ public class BsiTr03183Test {
 
 		assertThat(BsiTr03183Validator.validate(model, medium(SbomFormat.SPDX)))
 			.singleElement(STRING)
-			.contains("SPDX 3.0.1");
+			.contains("SPDX 3.0.1", "spdx.version=2.3");
+		assertThat(BsiTr03183Validator.validate(model, medium(SbomFormat.SPDX).withSpdxVersion("3.0.1"))).isEmpty();
 		assertThat(BsiTr03183Validator.validate(model, SbomConfig.of(SbomLevel.SIMPLE, SbomFormat.CYCLONEDX, false, TIME)))
 			.singleElement(STRING)
 			.contains("level=medium");

@@ -86,7 +86,7 @@ public class SbomExporter implements Exporter {
 			}
 		}
 
-		SbomSerializer serializer = SbomSerializers.forFormat(config.format());
+		SbomSerializer serializer = SbomSerializers.forConfig(config);
 		Resource resource = serializer.serialize(model, config);
 
 		String name = project.getName() + serializer.fileExtension();
