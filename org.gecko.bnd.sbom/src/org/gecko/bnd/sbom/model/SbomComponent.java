@@ -83,6 +83,12 @@ public final class SbomComponent {
 	 * version of a delivered file — for a component outside the scope of delivery.
 	 */
 	private boolean		minimumVersion;
+	/**
+	 * BSI TR-03183-2 §3.2.1/§5.1: outside the scope of delivery — needed at runtime, but provided
+	 * by the user's environment (the Java runtime; the OSGi framework of a library). Identified
+	 * (creator, name, minimum version), not described as a delivered file.
+	 */
+	private boolean		provided;
 	/** what the component is, where its name and version alone do not tell */
 	private String		description;
 
@@ -293,6 +299,15 @@ public final class SbomComponent {
 
 	public SbomComponent setDescription(String description) {
 		this.description = description;
+		return this;
+	}
+
+	public boolean isProvided() {
+		return provided;
+	}
+
+	public SbomComponent setProvided(boolean provided) {
+		this.provided = provided;
 		return this;
 	}
 

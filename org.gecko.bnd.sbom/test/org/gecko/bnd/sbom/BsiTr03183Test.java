@@ -27,6 +27,7 @@ import java.util.stream.Collectors;
 import org.gecko.bnd.sbom.model.MavenCoordinates;
 import org.gecko.bnd.sbom.model.SbomComponent;
 import org.gecko.bnd.sbom.model.SbomCreator;
+import org.gecko.bnd.sbom.model.SbomLayer;
 import org.gecko.bnd.sbom.model.SbomLevel;
 import org.gecko.bnd.sbom.model.SbomLicense;
 import org.gecko.bnd.sbom.model.SbomModel;
@@ -294,6 +295,73 @@ public class BsiTr03183Test {
 		SbomConfig.from(reporter, "validate=ntia, creator=Example Org", Map.of());
 
 		assertThat(reporter.getErrors()).hasSize(2);
+	}
+
+	// --- scope of delivery of the framework ---
+
+	@Test
+	public void frameworkIsDeliveredByDefault() {
+		Processor reporter = new Processor();
+		SbomConfig config = SbomConfig.from(reporter, "level=medium", Map.of());
+
+		assertThat(reporter.getErrors()).isEmpty();
+		assertThat(config.frameworkProvided()).isFalse();
+	}
+
+	@Test
+	public void frameworkProvidedOption() {
+		Processor reporter = new Processor();
+		SbomConfig config = SbomConfig.from(reporter, "level=medium, framework=provided", Map.of());
+
+		assertThat(reporter.getErrors()).isEmpty();
+		assertThat(config.frameworkProvided()).isTrue();
+		assertThat(config.withFrameworkProvided(false)
+			.frameworkProvided()).isFalse();
+	}
+
+	@Test
+	public void invalidFrameworkIsAnError() {
+		Processor reporter = new Processor();
+		SbomConfig.from(reporter, "framework=shipped", Map.of());
+
+		assertThat(reporter.getErrors()).hasSize(1);
+	}
+
+	@Test
+	public void providedFrameworkIsOnlyIdentified() {
+		SbomComponent framework = providedFramework();
+		SbomModel model = new SbomModel().setCreator(SbomCreator.of("Example Org", "sbom@example.org", null))
+			.addComponent(framework);
+
+		assertThat(BsiTr03183Validator.isIdentifiedOnly(framework)).isTrue();
+		assertThat(BsiTr03183Validator.validate(model, medium(SbomFormat.CYCLONEDX))).isEmpty();
+	}
+
+	@Test
+	@SuppressWarnings("unchecked")
+	public void cycloneDxMarksAProvidedFramework() throws Exception {
+		SbomModel model = new SbomModel().setApplicationName("app")
+			.addComponent(providedFramework());
+
+		Map<String, Object> bom = decode(new CycloneDxSerializer().serialize(model, medium(SbomFormat.CYCLONEDX)));
+		Map<String, Object> component = ((List<Map<String, Object>>) bom.get("components")).get(0);
+		Map<String, Object> properties = ((List<Map<String, Object>>) component.get("properties")).stream()
+			.collect(Collectors.toMap(p -> (String) p.get("name"), p -> p.get("value")));
+
+		assertThat(component).doesNotContainKey("hashes");
+		assertThat(properties).containsEntry(CycloneDxSerializer.PROPERTY_DELIVERY, "provided")
+			.containsEntry(CycloneDxSerializer.PROPERTY_VERSION_KIND, "minimum")
+			.containsEntry("osgi:layer", "runfw")
+			.doesNotContainKey(CycloneDxSerializer.BSI_FILENAME);
+	}
+
+	private static SbomComponent providedFramework() {
+		return new SbomComponent().setBsn("org.apache.felix.framework")
+			.setVersion("7.0.5")
+			.setLayer(SbomLayer.RUNFW)
+			.setProvided(true)
+			.setMinimumVersion(true)
+			.setCreator(SbomCreator.of("The Apache Software Foundation", null, "https://felix.apache.org"));
 	}
 
 	// --- helpers ---

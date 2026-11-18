@@ -82,6 +82,15 @@ public final class SbomConfig {
 	static final String			VALIDATE		= "validate";
 	/** {@code true}: a failed conformance check is an error instead of a warning. */
 	static final String			VALIDATE_STRICT	= "validate.strict";
+	/**
+	 * Whether the OSGi framework ({@code -runfw}) is part of the scope of delivery (BSI TR-03183-2
+	 * §3.2.1/§5.1): {@link #FRAMEWORK_DELIVERED} for an application that ships with its framework
+	 * (default), {@link #FRAMEWORK_PROVIDED} for a library or a test setup that runs on whichever
+	 * framework the user installs. A {@code .bndrun} does not tell which of the two it is.
+	 */
+	static final String			FRAMEWORK		= "framework";
+	public static final String	FRAMEWORK_DELIVERED	= "delivered";
+	public static final String	FRAMEWORK_PROVIDED	= "provided";
 	/** The {@code validate} value for BSI TR-03183-2. */
 	public static final String	VALIDATE_BSI	= "bsi-tr-03183-2";
 	/** {@code serialNumber} derived from the BOM's content (default). */
@@ -90,7 +99,7 @@ public final class SbomConfig {
 	static final String			SERIAL_RANDOM	= "random";
 
 	private static final List<String>	KEYS	= List.of(LEVEL, FORMAT, INCLUDE_OSGI, TIMESTAMP, SERIAL_NUMBER, APP_NAME,
-		APP_GROUP, APP_VERSION, APP_PURL, CYCLONEDX_VERSION, CREATOR, VALIDATE, VALIDATE_STRICT);
+		APP_GROUP, APP_VERSION, APP_PURL, CYCLONEDX_VERSION, CREATOR, VALIDATE, VALIDATE_STRICT, FRAMEWORK);
 
 	private final SbomLevel		level;
 	private final SbomFormat	format;
@@ -107,11 +116,13 @@ public final class SbomConfig {
 	private final String		creator;
 	private final String		validate;
 	private final boolean		validateStrict;
+	private final boolean		frameworkProvided;
 
 	private SbomConfig(SbomLevel level, SbomFormat format, boolean includeOSGIMetadata, Instant created,
 		boolean randomSerialNumber, String applicationName, String applicationGroup, String applicationVersion,
 		String cyclonedxVersion, String applicationPurl, Map<String, String> properties,
-		Map<String, String> mavenMappings, String creator, String validate, boolean validateStrict) {
+		Map<String, String> mavenMappings, String creator, String validate, boolean validateStrict,
+		boolean frameworkProvided) {
 		this.level = level;
 		this.format = format;
 		this.includeOSGIMetadata = includeOSGIMetadata;
@@ -128,6 +139,7 @@ public final class SbomConfig {
 		this.creator = creator;
 		this.validate = validate;
 		this.validateStrict = validateStrict;
+		this.frameworkProvided = frameworkProvided;
 	}
 
 	/**
@@ -138,7 +150,7 @@ public final class SbomConfig {
 	public static SbomConfig of(SbomLevel level, SbomFormat format, boolean includeOSGIMetadata, String timestamp) {
 		return new SbomConfig(level, format, includeOSGIMetadata,
 			timestamp != null ? Instant.parse(timestamp) : Instant.now(), false, null, null, null,
-			CYCLONEDX_VERSIONS.get(0), null, Map.of(), Map.of(), null, null, false);
+			CYCLONEDX_VERSIONS.get(0), null, Map.of(), Map.of(), null, null, false, false);
 	}
 
 	public static SbomConfig from(Project project, Map<String, String> options) {
@@ -214,11 +226,15 @@ public final class SbomConfig {
 			v -> VALIDATE_BSI.equalsIgnoreCase(v) ? Optional.of(VALIDATE_BSI) : Optional.empty(), Stream.of(VALIDATE_BSI));
 		Boolean validateStrict = value(reporter, values, VALIDATE_STRICT, Boolean.FALSE, SbomConfig::parseBoolean,
 			Stream.of("true", "false"));
+		String framework = value(reporter, values, FRAMEWORK, FRAMEWORK_DELIVERED,
+			v -> FRAMEWORK_DELIVERED.equalsIgnoreCase(v) ? Optional.of(FRAMEWORK_DELIVERED)
+				: FRAMEWORK_PROVIDED.equalsIgnoreCase(v) ? Optional.of(FRAMEWORK_PROVIDED) : Optional.empty(),
+			Stream.of(FRAMEWORK_DELIVERED, FRAMEWORK_PROVIDED));
 
 		return new SbomConfig(level, format, includeOSGIMetadata, created != null ? created : Instant.now(),
 			SERIAL_RANDOM.equals(serialNumber), text(values, APP_NAME), text(values, APP_GROUP),
 			text(values, APP_VERSION), cyclonedxVersion, applicationPurl, properties, mavenMappings, creator, validate,
-			validateStrict);
+			validateStrict, FRAMEWORK_PROVIDED.equals(framework));
 	}
 
 	/**
@@ -359,7 +375,7 @@ public final class SbomConfig {
 		}
 		return new SbomConfig(level, format, includeOSGIMetadata, created, randomSerialNumber, applicationName,
 			applicationGroup, applicationVersion, version, applicationPurl, properties, mavenMappings, creator, validate,
-			validateStrict);
+			validateStrict, frameworkProvided);
 	}
 
 	/** {@code application.name} from {@code -sbom} or the options, or {@code null}. */
@@ -381,7 +397,7 @@ public final class SbomConfig {
 	public SbomConfig withRandomSerialNumber() {
 		return new SbomConfig(level, format, includeOSGIMetadata, created, true, applicationName, applicationGroup,
 			applicationVersion, cyclonedxVersion, applicationPurl, properties, mavenMappings, creator, validate,
-			validateStrict);
+			validateStrict, frameworkProvided);
 	}
 
 	/** A copy with the given conformance check (for tests and the Maven/Gradle wrappers). */
@@ -391,7 +407,23 @@ public final class SbomConfig {
 		}
 		return new SbomConfig(level, format, includeOSGIMetadata, created, randomSerialNumber, applicationName,
 			applicationGroup, applicationVersion, cyclonedxVersion, applicationPurl, properties, mavenMappings, creator,
-			validate, strict);
+			validate, strict, frameworkProvided);
+	}
+
+	/** A copy with the framework delivered or provided (for tests and the Maven/Gradle wrappers). */
+	public SbomConfig withFrameworkProvided(boolean provided) {
+		return new SbomConfig(level, format, includeOSGIMetadata, created, randomSerialNumber, applicationName,
+			applicationGroup, applicationVersion, cyclonedxVersion, applicationPurl, properties, mavenMappings, creator,
+			validate, validateStrict, provided);
+	}
+
+	/**
+	 * {@code true} when the OSGi framework is not delivered with the application
+	 * ({@code framework=provided}): it is then identified with its minimum version, not described
+	 * as a delivered file.
+	 */
+	public boolean frameworkProvided() {
+		return frameworkProvided;
 	}
 
 	/** {@code creator} from {@code -sbom} or the options: an email address or a URL, or {@code null}. */

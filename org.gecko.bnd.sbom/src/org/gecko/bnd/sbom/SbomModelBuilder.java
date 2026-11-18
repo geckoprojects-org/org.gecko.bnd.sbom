@@ -103,15 +103,17 @@ public final class SbomModelBuilder {
 			.forEach(model::addProperty);
 
 		// View 2, A2.1: the resolved application bundles.
-		add(model, runbundles, null, SbomLayer.RUNBUNDLE);
+		add(model, runbundles, null, SbomLayer.RUNBUNDLE, false);
 
 		// View 2, A2.2: the framework infrastructure the bundles run on. -runfw and -runpath are
 		// what ends up on the framework's class path; -runsystempackages/-runsystemcapabilities
 		// only declare exports from there (or from the JDK) and bring no artifact of their own.
 		// Both accessors return fully resolved Containers with maven-* attributes, so the same
 		// PURL/license resolution applies.
-		add(model, project.getRunFw(), Category.FRAMEWORK, SbomLayer.RUNFW);
-		add(model, project.getRunpath(), Category.FRAMEWORK, SbomLayer.RUNPATH);
+		// BSI TR-03183-2 §5.1: an application ships with its framework; a library or a test setup
+		// runs on whichever one the user installs (framework=provided) — the .bndrun cannot tell.
+		add(model, project.getRunFw(), Category.FRAMEWORK, SbomLayer.RUNFW, config.frameworkProvided());
+		add(model, project.getRunpath(), Category.FRAMEWORK, SbomLayer.RUNPATH, false);
 
 		// #13: who depends on whom, from the manifests of the resolved set
 		DependencyGraph graph = new DependencyGraph(manifests);
@@ -162,25 +164,32 @@ public final class SbomModelBuilder {
 		return model;
 	}
 
-	private void add(SbomModel model, Collection<Container> containers, Category category, SbomLayer layer)
-		throws Exception {
+	private void add(SbomModel model, Collection<Container> containers, Category category, SbomLayer layer,
+		boolean provided) throws Exception {
 		if (containers == null) {
 			return;
 		}
 		for (Container container : containers) {
 			String key = container.getBundleSymbolicName() + "|" + container.getVersion();
 			if (seen.add(key)) {
-				SbomComponent component = toComponent(container, category).setLayer(layer);
+				SbomComponent component = toComponent(container, category, provided).setLayer(layer);
 				model.addComponent(component);
 				manifests.put(component, container.getManifest());
 			}
 		}
 	}
 
-	private SbomComponent toComponent(Container container, Category category) throws Exception {
+	/**
+	 * @param provided outside the scope of delivery (BSI TR-03183-2 §3.2.1): the version it was
+	 *            resolved against is the minimum the application needs, and no file of it is
+	 *            delivered, so it gets no filename, hash or file properties
+	 */
+	private SbomComponent toComponent(Container container, Category category, boolean provided) throws Exception {
 		SbomComponent component = new SbomComponent().setBsn(container.getBundleSymbolicName())
 			.setVersion(container.getVersion())
-			.setCategory(category);
+			.setCategory(category)
+			.setProvided(provided)
+			.setMinimumVersion(provided);
 
 		// Q3: staged identity resolution → Maven coordinates + PURL; otherwise mark honestly as
 		// unverified.
@@ -227,7 +236,7 @@ public final class SbomModelBuilder {
 		// medium+: hash + filename + license + creator + file properties (BSI-driven, see §7).
 		if (config.level()
 			.includes(SbomLevel.MEDIUM)) {
-			File file = container.getFile();
+			File file = provided ? null : container.getFile();
 			if (file != null && file.isFile()) {
 				component.setFilename(file.getName());
 				component.setSha512(sha512(file));
@@ -236,7 +245,12 @@ public final class SbomModelBuilder {
 				}
 			}
 			for (SbomComponent embedded : component.getEmbedded()) {
-				setEmbeddedJarProperties(embedded);
+				if (provided) {
+					// what a provided component embeds is not delivered either
+					setProvided(embedded);
+				} else {
+					setEmbeddedJarProperties(embedded);
+				}
 			}
 			Manifest manifest = attempt(component, "creator", container::getManifest);
 			component.setCreator(Creators.fromManifest(manifest));
@@ -309,6 +323,12 @@ public final class SbomModelBuilder {
 	}
 
 	/** A jar embedded as a file in a bundle is a jar too; shaded classes are not a file. */
+	private static void setProvided(SbomComponent embedded) {
+		embedded.setProvided(true);
+		embedded.getEmbedded()
+			.forEach(SbomModelBuilder::setProvided);
+	}
+
 	private static void setEmbeddedJarProperties(SbomComponent embedded) {
 		if (embedded.getFilename() != null && isJar(embedded.getFilename())) {
 			setJarProperties(embedded);
@@ -365,6 +385,7 @@ public final class SbomModelBuilder {
 			.setVersion(ee.getCapabilityVersion()
 				.toString())
 			.setLogical(true)
+			.setProvided(true)
 			.setMinimumVersion(true)
 			.setDescription("Java SE platform standard (osgi.ee=" + ee.getCapabilityName() + "), at least version "
 				+ ee.getCapabilityVersion() + "; not delivered: the Java runtime implementing it is chosen by the "

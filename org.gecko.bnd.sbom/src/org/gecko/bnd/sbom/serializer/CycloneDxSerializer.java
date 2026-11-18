@@ -53,6 +53,8 @@ public final class CycloneDxSerializer implements SbomSerializer {
 	 * §3.2.1), not the exact version of a delivered file.
 	 */
 	public static final String		PROPERTY_VERSION_KIND	= "osgi:version:kind";
+	/** {@code provided}: outside the scope of delivery, provided by the user's environment */
+	public static final String		PROPERTY_DELIVERY		= "osgi:delivery";
 
 	/** BSI property taxonomy for TR-03183-2 v2.1.0 (github.com/tr-03183/tr-03183-cyclonedx-property-taxonomy) */
 	public static final String		BSI_FILENAME			= "bsi:component:filename";
@@ -275,6 +277,9 @@ public final class CycloneDxSerializer implements SbomSerializer {
 			if (component.getVersion() != null) {
 				properties.add(property(PROPERTY_BUNDLE_VERSION, component.getVersion()));
 			}
+		}
+		if (component.isProvided()) {
+			properties.add(property(PROPERTY_DELIVERY, "provided"));
 		}
 		if (component.isMinimumVersion()) {
 			properties.add(property(PROPERTY_VERSION_KIND, "minimum"));

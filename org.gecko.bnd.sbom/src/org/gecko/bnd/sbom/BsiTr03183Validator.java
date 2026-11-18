@@ -28,7 +28,8 @@ import org.gecko.bnd.sbom.serializer.SbomFormat;
  * Which fields a component needs depends on its kind (TR §5.1):
  * <ul>
  * <li><b>identified</b> (§3.2.4) — a component outside the scope of delivery (the Java runtime,
- * with its minimum version) or a library shaded into a bundle, which is no file of its own:
+ * the OSGi framework with {@code framework=provided}, each with its minimum version) or a
+ * library shaded into a bundle, which is no file of its own:
  * creator, name, version</li>
  * <li><b>fully described</b> (§5.2.2) — every delivered file: in addition filename, distribution
  * licence, SHA-512 hash and the executable, archive and structured properties</li>
@@ -99,11 +100,11 @@ public final class BsiTr03183Validator {
 	}
 
 	/**
-	 * Outside the scope of delivery (minimum version) or no file of its own (a library shaded into
-	 * a bundle): identified, not fully described.
+	 * Outside the scope of delivery (the Java runtime, a provided framework) or no file of its own
+	 * (a library shaded into a bundle): identified, not fully described.
 	 */
 	static boolean isIdentifiedOnly(SbomComponent component) {
-		return component.isMinimumVersion() || component.isLogical()
+		return component.isProvided() || component.isMinimumVersion() || component.isLogical()
 			|| component.getEmbeddedPath() != null && component.getFilename() == null;
 	}
 

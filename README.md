@@ -48,6 +48,7 @@ The SBOM is written to the project's `generated/` folder as `<name>.bndrun.cdx.j
 | `creator` | creator of the SBOM and of the application, an email address or an http(s) URL (BSI TR-03183-2 §5.2.1); CycloneDX `metadata.manufacturer` | at `medium` from the project the `.bndrun` lives in: `Bundle-Vendor` as name, an email address from `Bundle-ContactAddress`, else a URL from there or `Bundle-DocURL` |
 | `validate` | `bsi-tr-03183-2`: checks the SBOM against the required fields of BSI TR-03183-2 v2.1.0 and reports each gap; the SBOM is written either way | none |
 | `validate.strict` | `true`: a gap found by `validate` is an error, which fails the build; `false`: a warning | `false` |
+| `framework` | whether the OSGi framework (`-runfw`) is part of the scope of delivery: `delivered` for an application that ships with its framework; `provided` for a library, or a test setup, that runs on whichever framework the user installs — the framework is then identified with the version it was resolved against as minimum (`osgi:delivery=provided`, `osgi:version:kind=minimum`), without filename or hash. A `.bndrun` does not tell which of the two it is | `delivered` |
 | `maven.<bsn>` | `groupId:artifactId[:version]`: Maven coordinates for a bundle from a p2 or OBR repository that is also published to Maven (version defaults to the bundle's major.minor.micro) | none |
 
 ### BSI TR-03183-2
@@ -70,7 +71,11 @@ The SBOM is written to the project's `generated/` folder as `<name>.bndrun.cdx.j
   minimum the application requires (TR §3.2.1), marked `osgi:version:kind=minimum`: the
   `-runee`, or else the highest minimum the bundles require. Java SE is a standard, so its
   creator is the body that specifies it, the Java Community Process (`https://jcp.org`), not
-  the vendor of a runtime. Every bundle that requires an execution environment depends on it.
+  the vendor of a runtime. Every bundle that requires an execution environment depends on it;
+- the scope of delivery of the framework, which only the author knows: an application ships
+  with its framework (`framework=delivered`, the default), a library runs on the user's
+  (`framework=provided`); a provided framework is identified like the Java SE standard, with
+  its minimum version and without filename, hash or file properties.
 
 TR-03183-2 has no version ranges: delivered components carry their exact, resolved version,
 components outside the delivery their minimum version.
@@ -136,7 +141,7 @@ A complete example:
   updated in the framework), `runfw` or `runpath` (on the framework's class path, replaced only
   by rebuilding the launch). `-runsystempackages` and `-runsystemcapabilities` add no
   components: they only declare exports from `-runfw`, `-runpath` or the JDK; the JDK itself
-  is not part of the SBOM.
+  appears only at `medium`, as the Java SE standard (see BSI TR-03183-2 below).
 - **Licenses** (`medium`): as SPDX ids where they can be told with confidence — from
   `Bundle-License` (ids, expressions, known names and URLs), the artifact's POM next to the
   jar or inside it, or a license file. A `Bundle-License` that is not recognized, e.g. a URL

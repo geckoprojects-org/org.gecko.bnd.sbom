@@ -242,6 +242,9 @@ public final class SpdxSerializer implements SbomSerializer {
 			comment.add("OSGi bundle: " + component.getBsn()
 				+ (component.getVersion() != null ? " " + component.getVersion() : "") + ".");
 		}
+		if (component.isProvided()) {
+			comment.add("Not delivered: provided by the user's environment.");
+		}
 		if (component.isMinimumVersion()) {
 			comment.add("Version is the minimum the application requires, not a delivered file's.");
 		}
