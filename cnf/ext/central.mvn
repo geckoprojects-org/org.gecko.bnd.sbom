@@ -22,7 +22,7 @@ org.assertj:assertj-core:3.27.7
 org.eclipse.fennec.bnd:org.eclipse.fennec.bnd.library:0.0.10
 
 # framework for runtime.bndrun (SBOM of the exporter's own runtime, see org.gecko.bnd.sbom/build.gradle)
-org.apache.felix:org.apache.felix.framework:7.0.5
+org.apache.felix:org.apache.felix.framework:8.0.0
 # what bndlib needs at runtime besides the framework
 org.osgi:org.osgi.service.repository:1.1.0
 org.osgi:org.osgi.util.function:1.2.0
