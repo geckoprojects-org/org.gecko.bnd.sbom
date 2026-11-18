@@ -71,10 +71,8 @@ public final class SbomComponent {
 	private Boolean		executable;
 	private Boolean		archive;
 	private Boolean		structured;
-	/** BSI TR-03183-2 §5.2.2 component creator: email address, preferred over the URL. */
-	private String		creatorEmail;
-	/** BSI TR-03183-2 §5.2.2 component creator: home page or project web page. */
-	private String		creatorUrl;
+	/** BSI TR-03183-2 §5.2.2 component creator; {@code null} when the bundle names none. */
+	private SbomCreator	creator;
 	/**
 	 * BSI TR-03183-2 §3.2.2: an abstraction over files rather than a file, e.g. the Java runtime
 	 * the application needs, identified by its OSGi execution environment.
@@ -85,6 +83,8 @@ public final class SbomComponent {
 	 * version of a delivered file — for a component outside the scope of delivery.
 	 */
 	private boolean		minimumVersion;
+	/** what the component is, where its name and version alone do not tell */
+	private String		description;
 
 	public String getBsn() {
 		return bsn;
@@ -264,27 +264,18 @@ public final class SbomComponent {
 		return executable != null && archive != null && structured != null;
 	}
 
-	public String getCreatorEmail() {
-		return creatorEmail;
+	public SbomCreator getCreator() {
+		return creator;
 	}
 
-	public SbomComponent setCreatorEmail(String creatorEmail) {
-		this.creatorEmail = creatorEmail;
+	public SbomComponent setCreator(SbomCreator creator) {
+		this.creator = creator;
 		return this;
 	}
 
-	public String getCreatorUrl() {
-		return creatorUrl;
-	}
-
-	public SbomComponent setCreatorUrl(String creatorUrl) {
-		this.creatorUrl = creatorUrl;
-		return this;
-	}
-
-	/** {@code true} when the component creator is known by email or URL. */
+	/** {@code true} when the component creator is known by email or URL (BSI TR-03183-2). */
 	public boolean hasCreator() {
-		return creatorEmail != null || creatorUrl != null;
+		return creator != null && creator.isIdentified();
 	}
 
 	public boolean isLogical() {
@@ -293,6 +284,15 @@ public final class SbomComponent {
 
 	public SbomComponent setLogical(boolean logical) {
 		this.logical = logical;
+		return this;
+	}
+
+	public String getDescription() {
+		return description;
+	}
+
+	public SbomComponent setDescription(String description) {
+		this.description = description;
 		return this;
 	}
 

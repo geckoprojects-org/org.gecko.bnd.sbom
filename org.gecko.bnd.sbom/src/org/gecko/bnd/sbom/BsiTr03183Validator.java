@@ -54,8 +54,10 @@ public final class BsiTr03183Validator {
 				+ "format=cyclonedx for a conformant SBOM");
 		}
 		// TR §5.2.1
-		if (model.getCreatorEmail() == null && model.getCreatorUrl() == null) {
-			findings.add("SBOM: no creator (email address or URL); set 'creator' in -sbom or Bundle-DocURL");
+		if (model.getCreator() == null || !model.getCreator()
+			.isIdentified()) {
+			findings.add("SBOM and application: no creator (email address or URL); set Bundle-ContactAddress or "
+				+ "Bundle-DocURL in the project of the .bndrun, or 'creator' in -sbom");
 		}
 		for (SbomComponent component : model.getAllComponents()) {
 			List<String> missing = missing(component);

@@ -22,6 +22,7 @@ import java.util.stream.Collectors;
 import org.gecko.bnd.sbom.SbomConfig;
 import org.gecko.bnd.sbom.model.MavenCoordinates;
 import org.gecko.bnd.sbom.model.SbomComponent;
+import org.gecko.bnd.sbom.model.SbomCreator;
 import org.gecko.bnd.sbom.model.SbomLicense;
 import org.gecko.bnd.sbom.model.SbomModel;
 import org.gecko.bnd.sbom.model.SbomRefs;
@@ -105,7 +106,7 @@ public final class CycloneDxSerializer implements SbomSerializer {
 		metadata.put("timestamp", config.created()
 			.toString());
 		// BSI TR-03183-2 §5.2.1, table 8: the creator of the SBOM
-		Map<String, Object> manufacturer = creator(model.getCreatorEmail(), model.getCreatorUrl());
+		Map<String, Object> manufacturer = creator(model.getCreator());
 		if (manufacturer != null) {
 			metadata.put("manufacturer", manufacturer);
 		}
@@ -120,6 +121,11 @@ public final class CycloneDxSerializer implements SbomSerializer {
 		app.put("type", "application");
 		putIfPresent(app, "group", model.getApplicationGroup());
 		app.put("name", model.getApplicationName());
+		// BSI TR-03183-2 table 9: the creator of the primary component is the one of the SBOM
+		Map<String, Object> appManufacturer = creator(model.getCreator());
+		if (appManufacturer != null) {
+			app.put("manufacturer", appManufacturer);
+		}
 		putIfPresent(app, "version", model.getApplicationVersion());
 		putIfPresent(app, "purl", model.getApplicationPurl());
 		List<Object> references = new ArrayList<>();
@@ -237,10 +243,11 @@ public final class CycloneDxSerializer implements SbomSerializer {
 		}
 		putIfPresent(node, "purl", component.getPurl());
 		// BSI TR-03183-2 §5.2.2, table 9: the component creator
-		Map<String, Object> manufacturer = creator(component.getCreatorEmail(), component.getCreatorUrl());
+		Map<String, Object> manufacturer = creator(component.getCreator());
 		if (manufacturer != null) {
 			node.put("manufacturer", manufacturer);
 		}
+		putIfPresent(node, "description", component.getDescription());
 
 		if (component.getSha512() != null) {
 			Map<String, Object> hash = new LinkedHashMap<>();
@@ -357,17 +364,21 @@ public final class CycloneDxSerializer implements SbomSerializer {
 	}
 
 	/**
-	 * A CycloneDX organizational entity for a creator (BSI TR-03183-2 tables 8 and 9): the email
-	 * address as contact, otherwise the URL; {@code null} when neither is known.
+	 * A CycloneDX organizational entity for a creator (BSI TR-03183-2 tables 8 and 9): its name,
+	 * and the email address as contact or otherwise the URL; {@code null} for no creator.
 	 */
-	private static Map<String, Object> creator(String email, String url) {
-		if (email != null) {
-			return singletonMap("contact", listOf(singletonMap("email", email)));
+	private static Map<String, Object> creator(SbomCreator creator) {
+		if (creator == null) {
+			return null;
 		}
-		if (url != null) {
-			return singletonMap("url", listOf(url));
+		Map<String, Object> entity = new LinkedHashMap<>();
+		putIfPresent(entity, "name", creator.name());
+		if (creator.email() != null) {
+			entity.put("contact", listOf(singletonMap("email", creator.email())));
+		} else if (creator.url() != null) {
+			entity.put("url", listOf(creator.url()));
 		}
-		return null;
+		return entity;
 	}
 
 	private static void putIfPresent(Map<String, Object> node, String key, String value) {

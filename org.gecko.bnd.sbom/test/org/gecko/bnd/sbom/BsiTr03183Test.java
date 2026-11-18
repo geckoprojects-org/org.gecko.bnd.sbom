@@ -17,6 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.InstanceOfAssertFactories.STRING;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.util.List;
 import java.util.Map;
 import java.util.jar.Attributes;
@@ -25,16 +26,21 @@ import java.util.stream.Collectors;
 
 import org.gecko.bnd.sbom.model.MavenCoordinates;
 import org.gecko.bnd.sbom.model.SbomComponent;
+import org.gecko.bnd.sbom.model.SbomCreator;
 import org.gecko.bnd.sbom.model.SbomLevel;
 import org.gecko.bnd.sbom.model.SbomLicense;
 import org.gecko.bnd.sbom.model.SbomModel;
 import org.gecko.bnd.sbom.serializer.CycloneDxSerializer;
 import org.gecko.bnd.sbom.serializer.SbomFormat;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import aQute.bnd.build.Run;
+import aQute.bnd.build.Workspace;
 import aQute.bnd.build.model.EE;
 import aQute.bnd.osgi.Processor;
 import aQute.bnd.osgi.Resource;
+import aQute.lib.io.IO;
 import aQute.lib.json.JSONCodec;
 
 /**
@@ -79,34 +85,73 @@ public class BsiTr03183Test {
 
 	@Test
 	public void creatorEmailFromContactAddress() {
-		SbomComponent component = new SbomComponent();
 		Manifest manifest = manifest("Bundle-ContactAddress", "Example Org, Some Street 1, security@example.org");
 		manifest.getMainAttributes()
 			.putValue("Bundle-DocURL", "https://example.org/docs");
-		Creators.fromManifest(component, manifest);
 
-		assertThat(component.getCreatorEmail()).isEqualTo("security@example.org");
-		assertThat(component.getCreatorUrl()).isNull();
+		assertThat(Creators.fromManifest(manifest)).isEqualTo(new SbomCreator(null, "security@example.org", null));
 	}
 
 	@Test
 	public void creatorUrlFromDocUrlWithoutCredentials() {
-		SbomComponent component = new SbomComponent();
 		Manifest manifest = manifest("Bundle-DocURL", "https://user:token@example.org/docs?key=secret");
 		manifest.getMainAttributes()
 			.putValue("Bundle-Vendor", "Example Org");
-		Creators.fromManifest(component, manifest);
 
-		assertThat(component.getCreatorUrl()).isEqualTo("https://example.org/docs");
-		assertThat(component.getCreatorEmail()).isNull();
+		assertThat(Creators.fromManifest(manifest))
+			.isEqualTo(new SbomCreator("Example Org", null, "https://example.org/docs"));
 	}
 
 	@Test
-	public void noCreatorFromVendorAlone() {
-		SbomComponent component = new SbomComponent();
-		Creators.fromManifest(component, manifest("Bundle-Vendor", "Example Org"));
+	public void vendorAloneIsNoIdentifiedCreator() {
+		SbomComponent component = new SbomComponent()
+			.setCreator(Creators.fromManifest(manifest("Bundle-Vendor", "Example Org")));
 
+		assertThat(component.getCreator()
+			.name()).isEqualTo("Example Org");
 		assertThat(component.hasCreator()).isFalse();
+	}
+
+	@Test
+	public void sbomCreatorFromTheProjectOfTheBndrun(@TempDir File dir) throws Exception {
+		Run run = bndrunInProject(dir, "Bundle-Vendor: Example Org\nBundle-ContactAddress: sbom@example.org\n", "");
+
+		SbomModel model = new SbomModelBuilder(run, medium(SbomFormat.CYCLONEDX)).build();
+
+		assertThat(model.getCreator()).isEqualTo(new SbomCreator("Example Org", "sbom@example.org", null));
+	}
+
+	@Test
+	public void creatorOptionKeepsTheVendorName(@TempDir File dir) throws Exception {
+		Run run = bndrunInProject(dir, "Bundle-Vendor: Example Org\n", "-sbom: creator=https://example.org\n");
+
+		SbomModel model = new SbomModelBuilder(run, SbomConfig.from(run, Map.of())).build();
+
+		assertThat(model.getCreator()).isEqualTo(new SbomCreator("Example Org", null, "https://example.org"));
+	}
+
+	@Test
+	public void noDerivedCreatorAtLevelSimple(@TempDir File dir) throws Exception {
+		Run run = bndrunInProject(dir, "Bundle-Vendor: Example Org\nBundle-DocURL: https://example.org\n", "");
+
+		SbomModel model = new SbomModelBuilder(run,
+			SbomConfig.of(SbomLevel.SIMPLE, SbomFormat.CYCLONEDX, false, TIME)).build();
+
+		assertThat(model.getCreator()).isNull();
+	}
+
+	@Test
+	public void javaRuntimeIsTheJavaSEApiWithTheRuneeAsMinimum(@TempDir File dir) throws Exception {
+		Run run = bndrunInProject(dir, "", "-runee: JavaSE-21\n");
+
+		SbomComponent javaSE = new SbomModelBuilder(run, medium(SbomFormat.CYCLONEDX)).javaRuntime();
+
+		assertThat(javaSE.getBsn()).isEqualTo("JavaSE");
+		assertThat(javaSE.getVersion()).isEqualTo("21.0.0");
+		assertThat(javaSE.isLogical()).isTrue();
+		assertThat(javaSE.isMinimumVersion()).isTrue();
+		assertThat(javaSE.getPurl()).isNull();
+		assertThat(javaSE.getDescription()).contains("Java SE platform API", "not delivered");
 	}
 
 	// --- CycloneDX output ---
@@ -116,14 +161,18 @@ public class BsiTr03183Test {
 	public void cycloneDxCarriesTaxonomyPropertiesAndCreators() throws Exception {
 		SbomComponent runtime = javaRuntime();
 		SbomModel model = new SbomModel().setApplicationName("app")
-			.setCreatorEmail("sbom@example.org")
+			.setCreator(new SbomCreator("Example Org", "sbom@example.org", null))
 			.addComponent(delivered())
 			.addComponent(runtime);
 
 		Map<String, Object> bom = decode(new CycloneDxSerializer().serialize(model, medium(SbomFormat.CYCLONEDX)));
 
 		Map<String, Object> metadata = (Map<String, Object>) bom.get("metadata");
-		assertThat(metadata).containsEntry("manufacturer", Map.of("contact", List.of(Map.of("email", "sbom@example.org"))));
+		Map<String, Object> organization = Map.of("name", "Example Org", "contact",
+			List.of(Map.of("email", "sbom@example.org")));
+		assertThat(metadata).containsEntry("manufacturer", organization);
+		// the application is created by the creator of the SBOM (TR table 9)
+		assertThat((Map<String, Object>) metadata.get("component")).containsEntry("manufacturer", organization);
 
 		List<Map<String, Object>> components = (List<Map<String, Object>>) bom.get("components");
 		Map<String, Object> bundle = components.get(0);
@@ -138,7 +187,9 @@ public class BsiTr03183Test {
 		Map<String, Object> platform = components.get(1);
 		assertThat(platform).containsEntry("type", "platform")
 			.containsEntry("name", "JavaSE")
-			.containsEntry("version", "17.0.0");
+			.containsEntry("version", "17.0.0")
+			.containsEntry("description", "Java SE API")
+			.doesNotContainKey("purl");
 		assertThat(properties(platform)).containsEntry(CycloneDxSerializer.PROPERTY_VERSION_KIND, "minimum")
 			.containsEntry("osgi:ee", "JavaSE")
 			.doesNotContainKey(CycloneDxSerializer.PROPERTY_BSN)
@@ -167,9 +218,9 @@ public class BsiTr03183Test {
 	@Test
 	public void conformantModelHasNoFindings() {
 		SbomModel model = new SbomModel().setApplicationName("app")
-			.setCreatorUrl("https://example.org")
+			.setCreator(SbomCreator.of(null, null, "https://example.org"))
 			.addComponent(delivered())
-			.addComponent(javaRuntime().setCreatorUrl("https://openjdk.org"));
+			.addComponent(javaRuntime().setCreator(SbomCreator.of(null, null, "https://openjdk.org")));
 
 		assertThat(BsiTr03183Validator.validate(model, medium(SbomFormat.CYCLONEDX))).isEmpty();
 	}
@@ -184,7 +235,7 @@ public class BsiTr03183Test {
 		List<String> findings = BsiTr03183Validator.validate(model, medium(SbomFormat.CYCLONEDX));
 
 		assertThat(findings).hasSize(3);
-		assertThat(findings.get(0)).startsWith("SBOM: no creator");
+		assertThat(findings.get(0)).startsWith("SBOM and application: no creator");
 		assertThat(findings.get(1)).startsWith("bare@1.0.0: missing")
 			.contains("creator", "filename", "distribution licence", "SHA-512 hash",
 				"executable/archive/structured properties");
@@ -199,7 +250,7 @@ public class BsiTr03183Test {
 			.setPurl("pkg:maven/com.example/shaded@2.0.0")
 			.setEmbeddedPath("META-INF/maven/com.example/shaded/pom.properties"));
 		SbomModel model = new SbomModel().setApplicationName("app")
-			.setCreatorUrl("https://example.org")
+			.setCreator(SbomCreator.of(null, null, "https://example.org"))
 			.addComponent(bundle);
 
 		assertThat(BsiTr03183Validator.validate(model, medium(SbomFormat.CYCLONEDX)))
@@ -209,7 +260,7 @@ public class BsiTr03183Test {
 	@Test
 	public void spdxAndSimpleLevelAreNotConformant() {
 		SbomModel model = new SbomModel().setApplicationName("app")
-			.setCreatorUrl("https://example.org");
+			.setCreator(SbomCreator.of(null, null, "https://example.org"));
 
 		assertThat(BsiTr03183Validator.validate(model, medium(SbomFormat.SPDX)))
 			.singleElement(STRING)
@@ -253,14 +304,32 @@ public class BsiTr03183Test {
 			.setSha512("abc")
 			.addLicense(SbomLicense.spdx("Apache-2.0"))
 			.setFileProperties(true, true, true)
-			.setCreatorUrl("https://example.org");
+			.setCreator(SbomCreator.of(null, null, "https://example.org"));
 	}
 
 	private static SbomComponent javaRuntime() {
 		return new SbomComponent().setBsn("JavaSE")
 			.setVersion("17.0.0")
 			.setLogical(true)
-			.setMinimumVersion(true);
+			.setMinimumVersion(true)
+			.setDescription("Java SE API");
+	}
+
+	/**
+	 * A workspace with one project {@code proj} whose {@code bnd.bnd} holds {@code projectBnd},
+	 * and in it {@code app.bndrun} with {@code bndrun}.
+	 */
+	private static Run bndrunInProject(File dir, String projectBnd, String bndrun) throws Exception {
+		File cnf = new File(dir, "cnf");
+		cnf.mkdirs();
+		IO.store("", new File(cnf, "build.bnd"));
+		File proj = new File(dir, "proj");
+		proj.mkdirs();
+		IO.store(projectBnd, new File(proj, "bnd.bnd"));
+		File file = new File(proj, "app.bndrun");
+		IO.store(bndrun, file);
+		Workspace workspace = new Workspace(dir);
+		return Run.createRun(workspace, file);
 	}
 
 	private static SbomConfig medium(SbomFormat format) {

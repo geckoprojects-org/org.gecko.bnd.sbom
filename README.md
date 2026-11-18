@@ -45,7 +45,7 @@ The SBOM is written to the project's `generated/` folder as `<name>.bndrun.cdx.j
 | `cyclonedx.version` | `1.6`, `1.7` (written with the matching `$schema`) | `1.6` |
 | `application.purl` | PURL of the application, e.g. of the image built from the bndrun (`"pkg:oci/..."`, quoted); also its `bom-ref` | none: the application is not published under the workspace's Maven coordinates, so none is derived from them |
 | `property.<name>` | free properties of the BOM, e.g. `property.vcs:commit=${env;GITHUB_SHA}`; CycloneDX `metadata.properties`, SPDX document comment | none |
-| `creator` | creator of the SBOM, an email address or an http(s) URL (BSI TR-03183-2 §5.2.1); CycloneDX `metadata.manufacturer` | at `medium` the application's `Bundle-DocURL` |
+| `creator` | creator of the SBOM and of the application, an email address or an http(s) URL (BSI TR-03183-2 §5.2.1); CycloneDX `metadata.manufacturer` | at `medium` from the project the `.bndrun` lives in: `Bundle-Vendor` as name, an email address from `Bundle-ContactAddress`, else a URL from there or `Bundle-DocURL` |
 | `validate` | `bsi-tr-03183-2`: checks the SBOM against the required fields of BSI TR-03183-2 v2.1.0 and reports each gap; the SBOM is written either way | none |
 | `validate.strict` | `true`: a gap found by `validate` is an error, which fails the build; `false`: a warning | `false` |
 | `maven.<bsn>` | `groupId:artifactId[:version]`: Maven coordinates for a bundle from a p2 or OBR repository that is also published to Maven (version defaults to the bundle's major.minor.micro) | none |
@@ -58,13 +58,18 @@ The SBOM is written to the project's `generated/` folder as `<name>.bndrun.cdx.j
 - per bundle: `bsi:component:filename` and the properties `bsi:component:executable`,
   `bsi:component:archive`, `bsi:component:structured` (a jar: executable, archive, structured),
   next to the SHA-512 hash and the licenses;
-- the component creator as `manufacturer`: an email address from `Bundle-ContactAddress`, else
-  the URL there or in `Bundle-DocURL`;
-- the Java runtime as a logical component (CycloneDX type `platform`, name of the `osgi.ee`
-  capability, e.g. `JavaSE`). It is outside the scope of delivery, so its version is the minimum
-  the application requires (TR §3.2.1), marked `osgi:version:kind=minimum`: the `-runee`, or else
-  the highest minimum the bundles require. Every bundle that requires an execution environment
-  depends on it.
+- the component creator as `manufacturer`: `Bundle-Vendor` as name, an email address from
+  `Bundle-ContactAddress`, else the URL there or in `Bundle-DocURL`;
+- the creator of the SBOM and of the application: the vendor of the bnd project the `.bndrun`
+  lives in, from the same headers in its `bnd.bnd` (a `.bndrun` does not inherit them from
+  there, so the exporter looks the project up), else from the `.bndrun` and the workspace. The
+  tool, bnd, is listed under `metadata.tools`, not as creator;
+- the Java SE API as a logical component (CycloneDX type `platform`, name of the `osgi.ee`
+  capability, e.g. `JavaSE`). The Java runtime is not delivered — the operator chooses one of any
+  vendor — so the component stands for the API, without PURL or CPE, and its version is the
+  minimum the application requires (TR §3.2.1), marked `osgi:version:kind=minimum`: the
+  `-runee`, or else the highest minimum the bundles require. Every bundle that requires an
+  execution environment depends on it.
 
 TR-03183-2 has no version ranges: delivered components carry their exact, resolved version,
 components outside the delivery their minimum version.

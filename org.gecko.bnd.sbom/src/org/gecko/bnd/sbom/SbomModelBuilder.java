@@ -29,6 +29,7 @@ import java.util.jar.Manifest;
 
 import aQute.bnd.build.Container;
 import aQute.bnd.build.Project;
+import aQute.bnd.build.Workspace;
 import aQute.bnd.build.model.EE;
 import aQute.bnd.header.Attrs;
 import aQute.bnd.header.OSGiHeader;
@@ -40,6 +41,7 @@ import aQute.bnd.version.Version;
 import org.gecko.bnd.sbom.model.MavenCoordinates;
 import org.gecko.bnd.sbom.model.SbomComponent;
 import org.gecko.bnd.sbom.model.SbomComponent.Category;
+import org.gecko.bnd.sbom.model.SbomCreator;
 import org.gecko.bnd.sbom.model.SbomLayer;
 import org.gecko.bnd.sbom.model.SbomLevel;
 import org.gecko.bnd.sbom.model.SbomLicense;
@@ -94,17 +96,7 @@ public final class SbomModelBuilder {
 			// CWE-200: URLs are published without credentials, query or fragment
 			.setVcsUrl(Limits.publishableUrl(scmUrl(project.getProperty(Constants.BUNDLE_SCM))))
 			.setWebsiteUrl(Limits.publishableUrl(firstOf(project.getProperty(Constants.BUNDLE_DOCURL))));
-		// BSI TR-03183-2 §5.2.1: who created the SBOM, an email address or else a URL — the
-		// configured creator; at medium the project's web page stands in, as the TR allows
-		String creator = config.creator();
-		if (Creators.isEmail(creator)) {
-			model.setCreatorEmail(creator.trim());
-		} else if (creator != null) {
-			model.setCreatorUrl(Limits.publishableUrl(creator));
-		} else if (config.level()
-			.includes(SbomLevel.MEDIUM)) {
-			model.setCreatorUrl(model.getWebsiteUrl());
-		}
+		model.setCreator(creator());
 		Tools.current()
 			.forEach(model::addTool);
 		config.properties()
@@ -157,9 +149,9 @@ public final class SbomModelBuilder {
 		// A2.5/Q4: what this SBOM cannot see is declared, not silently omitted.
 		model.setDependenciesComplete(false);
 		model.addKnownUnknown(javaRuntime != null
-			? "The Java runtime is listed with the minimum version the application requires, not the runtime it "
-				+ "is deployed on; packages the bundles take from it (system packages, boot delegation) have no "
-				+ "dependency edge of their own"
+			? "The Java runtime is not delivered; it is listed as the Java SE API with the minimum version the "
+				+ "application requires, not as the runtime it is deployed on. Packages the bundles take from it "
+				+ "(system packages, boot delegation) have no dependency edge of their own"
 			: "The Java runtime is not part of this SBOM; packages the bundles take from it "
 				+ "(system packages, boot delegation) have no component and no dependency edge");
 		model.addKnownUnknown("DynamicImport-Package is not resolved");
@@ -247,7 +239,7 @@ public final class SbomModelBuilder {
 				setEmbeddedJarProperties(embedded);
 			}
 			Manifest manifest = attempt(component, "creator", container::getManifest);
-			Creators.fromManifest(component, manifest);
+			component.setCreator(Creators.fromManifest(manifest));
 			List<SbomLicense> licenses = attempt(component, "license", () -> licenseResolver.resolve(container));
 			if (licenses != null) {
 				licenses.forEach(component::addLicense);
@@ -255,6 +247,57 @@ public final class SbomModelBuilder {
 		}
 
 		return component;
+	}
+
+	/**
+	 * BSI TR-03183-2 §5.2.1: who created the SBOM — the vendor of the application, who is also
+	 * the creator of the application (the primary component). The tool that wrote it is listed
+	 * as tool, not as creator. The vendor is named by the bnd project the {@code .bndrun} lives in
+	 * ({@code Bundle-Vendor}, {@code Bundle-ContactAddress}, {@code Bundle-DocURL}); a
+	 * {@code .bndrun} inherits only from the workspace, not from that project's {@code bnd.bnd},
+	 * so the project is looked up. What the project leaves open comes from the {@code .bndrun}
+	 * and the workspace. The {@code creator} option overrides email address and URL. Without
+	 * that option derived only from level medium on, like the other fields of the TR.
+	 */
+	private SbomCreator creator() {
+		// an explicit creator gets the vendor's name at every level
+		boolean derive = config.creator() != null || config.level()
+			.includes(SbomLevel.MEDIUM);
+		SbomCreator host = derive ? Creators.fromProperties(hostProject()) : null;
+		SbomCreator run = derive ? Creators.fromProperties(project) : null;
+		String name = host != null && host.name() != null ? host.name() : run != null ? run.name() : null;
+		if (config.creator() != null) {
+			return Creators.fromOption(config.creator(), name);
+		}
+		SbomCreator reachable = host != null && host.isIdentified() ? host
+			: run != null && run.isIdentified() ? run : null;
+		return reachable != null ? SbomCreator.of(name, reachable.email(), reachable.url())
+			: SbomCreator.of(name, null, null);
+	}
+
+	/**
+	 * The bnd project whose directory holds the {@code .bndrun}, or {@code null} for a
+	 * {@code .bndrun} elsewhere (or a project exported through its own {@code bnd.bnd}).
+	 */
+	private Project hostProject() {
+		try {
+			File file = project.getPropertiesFile();
+			Workspace workspace = project.getWorkspace();
+			if (file == null || workspace == null || Project.BNDFILE.equals(file.getName())) {
+				return null;
+			}
+			File dir = file.getParentFile();
+			if (dir == null || !new File(dir, Project.BNDFILE).isFile()) {
+				return null;
+			}
+			Project host = workspace.getProject(dir.getName());
+			return host != null && dir.getCanonicalFile()
+				.equals(host.getBase()
+					.getCanonicalFile()) ? host : null;
+		} catch (Exception e) {
+			project.warning("Could not determine the project of %s: %s", project.getPropertiesFile(), e);
+			return null;
+		}
 	}
 
 	/**
@@ -281,11 +324,16 @@ public final class SbomModelBuilder {
 	}
 
 	/**
-	 * The Java runtime as a logical component (BSI TR-03183-2 §3.2.2), or {@code null} when
-	 * neither {@code -runee} nor any bundle names an execution environment. Its version is the
-	 * minimum the application requires (§3.2.1): {@code -runee}, the environment the application
-	 * was resolved — and so tested — against; without it the highest of the minimums the bundles
-	 * require ({@code Require-Capability: osgi.ee}, {@code Bundle-RequiredExecutionEnvironment}).
+	 * The Java SE platform as a logical component (BSI TR-03183-2 §3.2.2), or {@code null} when
+	 * neither {@code -runee} nor any bundle names an execution environment.
+	 * <p>
+	 * It is not delivered: the operator chooses the runtime, of any vendor and in any version
+	 * that implements the API. So the component stands for the Java SE API the application is
+	 * written against, not for a runtime — without PURL or CPE, which would name one
+	 * implementation. Its version is the minimum the application requires (§3.2.1):
+	 * {@code -runee}, the environment the application was resolved — and so tested — against;
+	 * without it the highest of the minimums the bundles require ({@code Require-Capability:
+	 * osgi.ee}, {@code Bundle-RequiredExecutionEnvironment}).
 	 */
 	SbomComponent javaRuntime() {
 		EE ee = null;
@@ -312,6 +360,9 @@ public final class SbomModelBuilder {
 				.toString())
 			.setLogical(true)
 			.setMinimumVersion(true)
+			.setDescription("Java SE platform API (osgi.ee=" + ee.getCapabilityName() + "), at least version "
+				+ ee.getCapabilityVersion() + "; not delivered: the Java runtime implementing it is chosen by the "
+				+ "operator")
 			.setCategory(Category.FRAMEWORK);
 	}
 

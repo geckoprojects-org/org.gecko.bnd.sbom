@@ -18,17 +18,19 @@ import java.util.jar.Manifest;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import org.gecko.bnd.sbom.model.SbomComponent;
+import org.gecko.bnd.sbom.model.SbomCreator;
 
 import aQute.bnd.osgi.Constants;
+import aQute.bnd.osgi.Processor;
 
 /**
  * The creator of a component or of the SBOM as BSI TR-03183-2 §5.2.1/§5.2.2 asks for it: an
  * email address, or else a URL (the creator's home page or the project's web page).
  * <p>
- * For a bundle both come from its manifest: an email address in {@code Bundle-ContactAddress},
- * otherwise a URL from there or from {@code Bundle-DocURL}. {@code Bundle-Vendor} is a name,
- * which the TR does not accept as creator, and is not used.
+ * Both come from the OSGi headers — of a bundle's manifest, or of the bnd project the
+ * {@code .bndrun} lives in: an email address in {@code Bundle-ContactAddress}, otherwise a URL
+ * from there or from {@code Bundle-DocURL}. {@code Bundle-Vendor} is the creator's name; the TR
+ * does not accept a name on its own, so it is written alongside.
  */
 public final class Creators {
 
@@ -48,23 +50,48 @@ public final class Creators {
 		return Limits.publishableUrl(value) != null;
 	}
 
-	/** Sets the creator of a component from its bundle's manifest, if the manifest names one. */
-	public static void fromManifest(SbomComponent component, Manifest manifest) {
+	/** The creator a bundle's manifest names, or {@code null}. */
+	public static SbomCreator fromManifest(Manifest manifest) {
 		if (manifest == null) {
-			return;
+			return null;
 		}
 		Attributes main = manifest.getMainAttributes();
-		String contact = main.getValue(Constants.BUNDLE_CONTACTADDRESS);
+		return of(main.getValue(Constants.BUNDLE_VENDOR), main.getValue(Constants.BUNDLE_CONTACTADDRESS),
+			main.getValue(Constants.BUNDLE_DOCURL));
+	}
+
+	/** The creator a bnd project names in its properties, or {@code null}. */
+	public static SbomCreator fromProperties(Processor properties) {
+		if (properties == null) {
+			return null;
+		}
+		return of(properties.getProperty(Constants.BUNDLE_VENDOR),
+			properties.getProperty(Constants.BUNDLE_CONTACTADDRESS), properties.getProperty(Constants.BUNDLE_DOCURL));
+	}
+
+	/**
+	 * The {@code creator} option: an email address or a URL, with the name of the vendor, if
+	 * known, alongside.
+	 */
+	public static SbomCreator fromOption(String option, String vendor) {
+		if (option == null) {
+			return null;
+		}
+		return isEmail(option) ? SbomCreator.of(vendor, option.trim(), null)
+			: SbomCreator.of(vendor, null, Limits.publishableUrl(option));
+	}
+
+	/** From the values of {@code Bundle-Vendor}, {@code Bundle-ContactAddress} and {@code Bundle-DocURL}. */
+	static SbomCreator of(String vendor, String contact, String docUrl) {
 		String email = findEmail(contact);
-		if (email != null) {
-			component.setCreatorEmail(email);
-			return;
+		String url = null;
+		if (email == null) {
+			url = Limits.publishableUrl(contact);
+			if (url == null) {
+				url = Limits.publishableUrl(docUrl);
+			}
 		}
-		String url = Limits.publishableUrl(contact);
-		if (url == null) {
-			url = Limits.publishableUrl(main.getValue(Constants.BUNDLE_DOCURL));
-		}
-		component.setCreatorUrl(url);
+		return SbomCreator.of(vendor, email, url);
 	}
 
 	/** The first email address in a free-text header such as {@code Bundle-ContactAddress}. */
