@@ -9,7 +9,7 @@
 
 A bnd exporter plugin that writes a Software Bill of Materials (SBOM) for the **resolved OSGi
 application** of a `.bndrun`: the resolved `-runbundles` plus the framework layer (`-runfw`,
-`-runpath`). Output formats are CycloneDX 1.6 and SPDX 2.3 (JSON).
+`-runpath`). Output formats are CycloneDX 1.6/1.7 and SPDX 2.3 or 3.0.1 (JSON / JSON-LD).
 
 | | |
 |---|---|
@@ -36,16 +36,69 @@ The SBOM is written to the project's `generated/` folder as `<name>.bndrun.cdx.j
 
 | Option | Values | Default |
 |---|---|---|
-| `level` | `simple` (name, version, PURL), `medium` (adds hashes and licenses), `full` | `simple` |
+| `level` | `simple` (name, version, PURL), `medium` (adds hashes, licenses and the fields of BSI TR-03183-2, see below), `full` | `simple` |
 | `format` | `cyclonedx`, `spdx` | `cyclonedx` |
 | `includeOSGIMetadata` | `true`, `false` | `false` |
 | `timestamp` | ISO-8601 instant, e.g. `2026-01-01T00:00:00Z`, for reproducible builds | time of the export |
 | `serialNumber` | `content` (derived from format, level, application and components: an unchanged application keeps its serial number), `random` | `content` |
 | `application.name`, `application.group`, `application.version` | identity of the application in the metadata | bndrun name, `-groupid`, `Bundle-Version` (with a `-groupid` in Maven form, `0.1.1.SNAPSHOT` → `0.1.1-SNAPSHOT`, as in the components' PURLs) |
 | `cyclonedx.version` | `1.6`, `1.7` (written with the matching `$schema`) | `1.6` |
+| `spdx.version` | `2.3` (JSON), `3.0.1` (JSON-LD, as BSI TR-03183-2 requires); 2.3 stays the default while few SCA tools read SPDX 3 | `2.3` |
 | `application.purl` | PURL of the application, e.g. of the image built from the bndrun (`"pkg:oci/..."`, quoted); also its `bom-ref` | none: the application is not published under the workspace's Maven coordinates, so none is derived from them |
 | `property.<name>` | free properties of the BOM, e.g. `property.vcs:commit=${env;GITHUB_SHA}`; CycloneDX `metadata.properties`, SPDX document comment | none |
+| `creator` | creator of the SBOM and of the application, an email address or an http(s) URL (BSI TR-03183-2 §5.2.1); CycloneDX `metadata.manufacturer` | at `medium` from the project the `.bndrun` lives in: `Bundle-Vendor` as name, an email address from `Bundle-ContactAddress`, else a URL from there or `Bundle-DocURL` |
+| `validate` | `bsi-tr-03183-2`: checks the SBOM against the required fields of BSI TR-03183-2 v2.1.0 and reports each gap; the SBOM is written either way | none |
+| `validate.strict` | `true`: a gap found by `validate` is an error, which fails the build; `false`: a warning | `false` |
+| `framework` | whether the OSGi framework (`-runfw`, together with its class path `-runpath`) is part of the scope of delivery: `delivered` for an application that ships with its framework; `provided` for a library, or a test setup, that runs on whichever framework the user installs — the framework and the `-runpath` entries are then identified with the version it was resolved against as minimum (`osgi:delivery=provided`, `osgi:version:kind=minimum`), without filename or hash. A `.bndrun` does not tell which of the two it is | `delivered` |
 | `maven.<bsn>` | `groupId:artifactId[:version]`: Maven coordinates for a bundle from a p2 or OBR repository that is also published to Maven (version defaults to the bundle's major.minor.micro) | none |
+
+### BSI TR-03183-2
+
+`level=medium` writes the fields BSI TR-03183-2 v2.1.0 requires, CycloneDX-side with the
+[BSI property taxonomy](https://github.com/tr-03183/tr-03183-cyclonedx-property-taxonomy):
+
+- per bundle: `bsi:component:filename` and the properties `bsi:component:executable`,
+  `bsi:component:archive`, `bsi:component:structured` (a jar: executable, archive, structured),
+  next to the SHA-512 hash and the licenses;
+- the component creator as `manufacturer`: `Bundle-Vendor` as name, an email address from
+  `Bundle-ContactAddress`, else the URL there or in `Bundle-DocURL`;
+- the creator of the SBOM and of the application: the vendor of the bnd project the `.bndrun`
+  lives in, from the same headers in its `bnd.bnd` (a `.bndrun` does not inherit them from
+  there, so the exporter looks the project up), else from the `.bndrun` and the workspace. The
+  tool, bnd, is listed under `metadata.tools`, not as creator;
+- the Java SE API as a logical component (CycloneDX type `platform`, name of the `osgi.ee`
+  capability, e.g. `JavaSE`). The Java runtime is not delivered — the operator chooses one of any
+  vendor — so the component stands for the API, without PURL or CPE, and its version is the
+  minimum the application requires (TR §3.2.1), marked `osgi:version:kind=minimum`: the
+  `-runee`, or else the highest minimum the bundles require. Java SE is a standard, so its
+  creator is the body that specifies it, the Java Community Process (`https://jcp.org`), not
+  the vendor of a runtime. Every bundle that requires an execution environment depends on it;
+- the scope of delivery of the framework, which only the author knows: an application ships
+  with its framework (`framework=delivered`, the default), a library runs on the user's
+  (`framework=provided`); a provided framework, together with its class path (`-runpath`), is
+  identified like the Java SE standard, with
+  its minimum version and without filename, hash or file properties.
+
+TR-03183-2 has no version ranges: delivered components carry their exact, resolved version,
+components outside the delivery their minimum version.
+
+In CycloneDX the SHA-512 of a delivered file is also written to its `distribution` external
+reference (TR table 9), whose URL is the download URL or else the file name, and licences carry
+`acknowledgement: concluded`, the distribution licence.
+
+`validate=bsi-tr-03183-2` reports what is still missing, e.g. a bundle without creator or license,
+as warnings; `validate.strict=true` makes them build errors.
+The TR requires CycloneDX 1.6 or SPDX 3.0.1 or later: with `format=spdx` set
+`spdx.version=3.0.1`. The SPDX 3 document follows the TR's mapping tables — the creator as
+`Organization` with an `email` (or URL) external identifier in `createdBy`/`originatedBy`,
+the delivered file as `software_File` (`hasDistributionArtifact`) with name, SHA-512 and the
+file properties in `software_additionalPurpose` (`executable`, `archive`, `container` or
+`firmware`), licences as `hasConcludedLicense`/`hasDeclaredLicense`, and `contains`/`dependsOn`
+with their `completeness`.
+
+```
+-sbom: level=medium, creator=security@example.org, validate=bsi-tr-03183-2
+```
 
 ### Configuration in the `.bndrun`
 
@@ -100,7 +153,7 @@ A complete example:
   updated in the framework), `runfw` or `runpath` (on the framework's class path, replaced only
   by rebuilding the launch). `-runsystempackages` and `-runsystemcapabilities` add no
   components: they only declare exports from `-runfw`, `-runpath` or the JDK; the JDK itself
-  is not part of the SBOM.
+  appears only at `medium`, as the Java SE standard (see BSI TR-03183-2 below).
 - **Licenses** (`medium`): as SPDX ids where they can be told with confidence — from
   `Bundle-License` (ids, expressions, known names and URLs), the artifact's POM next to the
   jar or inside it, or a license file. A `Bundle-License` that is not recognized, e.g. a URL

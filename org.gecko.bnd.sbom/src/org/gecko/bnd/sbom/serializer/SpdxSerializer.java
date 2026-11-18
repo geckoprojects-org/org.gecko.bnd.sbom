@@ -22,6 +22,7 @@ import java.util.Map;
 import org.gecko.bnd.sbom.SbomConfig;
 import org.gecko.bnd.sbom.model.MavenCoordinates;
 import org.gecko.bnd.sbom.model.SbomComponent;
+import org.gecko.bnd.sbom.model.SbomCreator;
 import org.gecko.bnd.sbom.model.SbomLicense;
 import org.gecko.bnd.sbom.model.SbomModel;
 import org.gecko.bnd.sbom.model.SbomRefs;
@@ -124,7 +125,20 @@ public final class SpdxSerializer implements SbomSerializer {
 		if (creators.isEmpty()) {
 			creators.add("Tool: org.gecko.bnd.sbom");
 		}
+		// BSI TR-03183-2 §5.2.1: the organization that created the SBOM, next to the tool
+		String organization = organization(model.getCreator());
+		if (organization != null) {
+			creators.add(organization);
+		}
 		return creators;
+	}
+
+	/** SPDX 2.3 {@code Organization: name (email)}; {@code null} without a name. */
+	private static String organization(SbomCreator creator) {
+		if (creator == null || creator.name() == null) {
+			return null;
+		}
+		return "Organization: " + creator.name() + (creator.email() != null ? " (" + creator.email() + ")" : "");
 	}
 
 	private static Map<String, Object> application(String spdxId, SbomModel model) {
@@ -135,6 +149,10 @@ public final class SpdxSerializer implements SbomSerializer {
 			pkg.put("versionInfo", model.getApplicationVersion());
 		}
 		pkg.put("primaryPackagePurpose", "APPLICATION");
+		String supplier = organization(model.getCreator());
+		if (supplier != null) {
+			pkg.put("supplier", supplier);
+		}
 		pkg.put("downloadLocation", model.getVcsUrl() != null ? "git+" + model.getVcsUrl() : NOASSERTION);
 		pkg.put("filesAnalyzed", false);
 		pkg.put("licenseConcluded", NOASSERTION);
@@ -186,6 +204,13 @@ public final class SpdxSerializer implements SbomSerializer {
 				pkg.put("versionInfo", component.getVersion());
 			}
 		}
+		String originator = organization(component.getCreator());
+		if (originator != null) {
+			pkg.put("originator", originator);
+		}
+		if (component.getDescription() != null) {
+			pkg.put("description", component.getDescription());
+		}
 		// #9: the download URL the repository gave, if any
 		pkg.put("downloadLocation", component.getDistributionUrl() != null ? component.getDistributionUrl() : NOASSERTION);
 		pkg.put("filesAnalyzed", false);
@@ -210,9 +235,18 @@ public final class SpdxSerializer implements SbomSerializer {
 		// SPDX 2.3 has no free properties: the OSGi identity, which the framework sees, goes into
 		// the comment. Q3.b: an unresolvable identity is flagged, not given a fake purl.
 		List<String> comment = new ArrayList<>();
-		if (component.getBsn() != null) {
+		if (component.isLogical()) {
+			// BSI TR-03183-2 §3.2.2: the Java runtime, named by its osgi.ee capability
+			comment.add("Logical component: OSGi execution environment " + component.getBsn() + ".");
+		} else if (component.getBsn() != null) {
 			comment.add("OSGi bundle: " + component.getBsn()
 				+ (component.getVersion() != null ? " " + component.getVersion() : "") + ".");
+		}
+		if (component.isProvided()) {
+			comment.add("Not delivered: provided by the user's environment.");
+		}
+		if (component.isMinimumVersion()) {
+			comment.add("Version is the minimum the application requires, not a delivered file's.");
 		}
 		if (component.getLayer() != null) {
 			comment.add("Layer: " + component.getLayer()

@@ -51,27 +51,28 @@ public class LicenseOutputTest {
 	@Test
 	public void cycloneDxSingleExpression() throws Exception {
 		assertThat(cdxLicenses(model(SbomLicense.expression("(Apache-2.0 OR EPL-2.0)"))))
-			.containsExactly(Map.of("expression", "(Apache-2.0 OR EPL-2.0)"));
+			.containsExactly(Map.of("expression", "(Apache-2.0 OR EPL-2.0)", "acknowledgement", "concluded"));
 	}
 
 	@Test
 	public void cycloneDxIdsAndExpressionBecomeOneExpression() throws Exception {
 		assertThat(cdxLicenses(model(SbomLicense.spdx("MIT"),
 			SbomLicense.expression("GPL-2.0-only WITH Classpath-exception-2.0"))))
-				.containsExactly(Map.of("expression", "MIT AND (GPL-2.0-only WITH Classpath-exception-2.0)"));
+				.containsExactly(Map.of("expression", "MIT AND (GPL-2.0-only WITH Classpath-exception-2.0)",
+					"acknowledgement", "concluded"));
 	}
 
 	@Test
 	public void cycloneDxExpressionNextToFreeTextFallsBackToNames() throws Exception {
 		assertThat(cdxLicenses(model(SbomLicense.expression("(Apache-2.0 OR EPL-2.0)"), SbomLicense.named("Vendor"))))
-			.containsExactly(Map.of("license", Map.of("name", "(Apache-2.0 OR EPL-2.0)")),
-				Map.of("license", Map.of("name", "Vendor")));
+			.containsExactly(Map.of("license", Map.of("name", "(Apache-2.0 OR EPL-2.0)", "acknowledgement", "concluded")),
+				Map.of("license", Map.of("name", "Vendor", "acknowledgement", "concluded")));
 	}
 
 	@Test
 	public void cycloneDxIdsStayLicenseEntries() throws Exception {
 		assertThat(cdxLicenses(model(SbomLicense.spdx("EPL-2.0"))))
-			.containsExactly(Map.of("license", Map.of("id", "EPL-2.0")));
+			.containsExactly(Map.of("license", Map.of("id", "EPL-2.0", "acknowledgement", "concluded")));
 	}
 
 	@Test
@@ -116,10 +117,12 @@ public class LicenseOutputTest {
 		assertThat(cdxLicenses(model(SbomLicense.spdx("BSD-3-Clause")
 			.withUrl("https://www.antlr.org/license.html"))))
 				.containsExactly(
-					Map.of("license", Map.of("id", "BSD-3-Clause", "url", "https://www.antlr.org/license.html")));
+					Map.of("license", Map.of("id", "BSD-3-Clause", "url", "https://www.antlr.org/license.html",
+						"acknowledgement", "concluded")));
 		assertThat(cdxLicenses(model(SbomLicense.named("https://example.org/l")
 			.withUrl("https://example.org/l"))))
-				.containsExactly(Map.of("license", Map.of("name", "https://example.org/l", "url", "https://example.org/l")));
+				.containsExactly(Map.of("license", Map.of("name", "https://example.org/l", "url", "https://example.org/l",
+					"acknowledgement", "concluded")));
 	}
 
 	@Test

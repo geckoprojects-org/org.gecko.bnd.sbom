@@ -64,6 +64,33 @@ public final class SbomComponent {
 	private String		embeddedPath;
 	/** runbundle, runfw or runpath; {@code null} for an embedded library (see its bundle) */
 	private SbomLayer	layer;
+	/**
+	 * BSI TR-03183-2 §5.2.2: whether the component file is executable, an archive, and
+	 * structured (keeps the metadata of its contents); {@code null} when not determined.
+	 */
+	private Boolean		executable;
+	private Boolean		archive;
+	private Boolean		structured;
+	/** BSI TR-03183-2 §5.2.2 component creator; {@code null} when the bundle names none. */
+	private SbomCreator	creator;
+	/**
+	 * BSI TR-03183-2 §3.2.2: an abstraction over files rather than a file, e.g. the Java runtime
+	 * the application needs, identified by its OSGi execution environment.
+	 */
+	private boolean		logical;
+	/**
+	 * BSI TR-03183-2 §3.2.1: the version is the minimum the application requires, not the exact
+	 * version of a delivered file — for a component outside the scope of delivery.
+	 */
+	private boolean		minimumVersion;
+	/**
+	 * BSI TR-03183-2 §3.2.1/§5.1: outside the scope of delivery — needed at runtime, but provided
+	 * by the user's environment (the Java runtime; the OSGi framework of a library). Identified
+	 * (creator, name, minimum version), not described as a delivered file.
+	 */
+	private boolean		provided;
+	/** what the component is, where its name and version alone do not tell */
+	private String		description;
 
 	public String getBsn() {
 		return bsn;
@@ -215,6 +242,81 @@ public final class SbomComponent {
 
 	public SbomComponent setEmbeddedPath(String embeddedPath) {
 		this.embeddedPath = embeddedPath;
+		return this;
+	}
+
+	public Boolean getExecutable() {
+		return executable;
+	}
+
+	public Boolean getArchive() {
+		return archive;
+	}
+
+	public Boolean getStructured() {
+		return structured;
+	}
+
+	/** Sets the three file properties of BSI TR-03183-2 §5.2.2 together. */
+	public SbomComponent setFileProperties(boolean executable, boolean archive, boolean structured) {
+		this.executable = executable;
+		this.archive = archive;
+		this.structured = structured;
+		return this;
+	}
+
+	/** {@code true} when the file properties of BSI TR-03183-2 §5.2.2 are set. */
+	public boolean hasFileProperties() {
+		return executable != null && archive != null && structured != null;
+	}
+
+	public SbomCreator getCreator() {
+		return creator;
+	}
+
+	public SbomComponent setCreator(SbomCreator creator) {
+		this.creator = creator;
+		return this;
+	}
+
+	/** {@code true} when the component creator is known by email or URL (BSI TR-03183-2). */
+	public boolean hasCreator() {
+		return creator != null && creator.isIdentified();
+	}
+
+	public boolean isLogical() {
+		return logical;
+	}
+
+	public SbomComponent setLogical(boolean logical) {
+		this.logical = logical;
+		return this;
+	}
+
+	public String getDescription() {
+		return description;
+	}
+
+	public SbomComponent setDescription(String description) {
+		this.description = description;
+		return this;
+	}
+
+	public boolean isProvided() {
+		return provided;
+	}
+
+	public SbomComponent setProvided(boolean provided) {
+		this.provided = provided;
+		return this;
+	}
+
+	public boolean isMinimumVersion() {
+		return minimumVersion;
+	}
+
+	public SbomComponent setMinimumVersion(boolean minimumVersion) {
+		this.minimumVersion = minimumVersion;
 		return this;
 	}
 }

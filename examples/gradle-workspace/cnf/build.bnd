@@ -2,6 +2,14 @@
 
 -groupid: org.example
 
+# Vendor and licence of the workspace's bundles: every project inherits them, so they end up in
+# each bundle's manifest — and in the SBOM as the creator of the bundles and of the SBOM itself
+# (BSI TR-03183-2 §5.2.1/§5.2.2 asks for an email address or a URL).
+Bundle-Vendor: Example Org
+Bundle-ContactAddress: sbom@example.org
+Bundle-DocURL: https://example.org
+Bundle-License: Apache-2.0;link="https://www.apache.org/licenses/LICENSE-2.0"
+
 # The libraries of the workspace: a Maven index, one GAV per line. bnd update proposes and
 # applies new versions here.
 -plugin.central: \

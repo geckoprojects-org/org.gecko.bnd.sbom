@@ -13,12 +13,22 @@
  */
 package org.gecko.bnd.sbom.serializer;
 
+import org.gecko.bnd.sbom.SbomConfig;
+
 /**
  * Selects the {@link SbomSerializer} for the configured {@link SbomFormat}.
  */
 public final class SbomSerializers {
 
 	private SbomSerializers() {}
+
+	/** The serializer for the format and format version of {@code config}. */
+	public static SbomSerializer forConfig(SbomConfig config) {
+		if (config.format() == SbomFormat.SPDX && config.isSpdx3()) {
+			return new Spdx3Serializer();
+		}
+		return forFormat(config.format());
+	}
 
 	public static SbomSerializer forFormat(SbomFormat format) {
 		switch (format) {

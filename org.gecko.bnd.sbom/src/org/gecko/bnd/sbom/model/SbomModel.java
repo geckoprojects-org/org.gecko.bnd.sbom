@@ -39,6 +39,11 @@ public final class SbomModel {
 	/** Website of the application (CycloneDX {@code website}, SPDX {@code homepage}). */
 	private String						websiteUrl;
 	/**
+	 * BSI TR-03183-2 §5.2.1/§5.2.2: who created the SBOM — the vendor of the application, who is
+	 * also the creator of the application itself (the primary component).
+	 */
+	private SbomCreator					creator;
+	/**
 	 * Dependency graph (#13): for each component the components it depends on; {@code null}
 	 * when no graph was computed.
 	 */
@@ -208,6 +213,15 @@ public final class SbomModel {
 
 	public SbomModel setDependenciesComplete(boolean dependenciesComplete) {
 		this.dependenciesComplete = dependenciesComplete;
+		return this;
+	}
+
+	public SbomCreator getCreator() {
+		return creator;
+	}
+
+	public SbomModel setCreator(SbomCreator creator) {
+		this.creator = creator;
 		return this;
 	}
 }
