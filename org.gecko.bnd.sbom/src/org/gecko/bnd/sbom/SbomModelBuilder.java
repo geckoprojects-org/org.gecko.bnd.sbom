@@ -323,6 +323,9 @@ public final class SbomModelBuilder {
 			.endsWith(".jar");
 	}
 
+	/** The creator of the Java SE standard (BSI TR-03183-2 §5.2.2): the body that specifies it. */
+	static final SbomCreator JAVA_SE_CREATOR = SbomCreator.of("Java Community Process", null, "https://jcp.org");
+
 	/**
 	 * The Java SE platform as a logical component (BSI TR-03183-2 §3.2.2), or {@code null} when
 	 * neither {@code -runee} nor any bundle names an execution environment.
@@ -334,6 +337,9 @@ public final class SbomModelBuilder {
 	 * {@code -runee}, the environment the application was resolved — and so tested — against;
 	 * without it the highest of the minimums the bundles require ({@code Require-Capability:
 	 * osgi.ee}, {@code Bundle-RequiredExecutionEnvironment}).
+	 * <p>
+	 * Java SE is a standard, so its creator is the body that specifies it, the Java Community
+	 * Process — not the vendor of whichever runtime the operator installs.
 	 */
 	SbomComponent javaRuntime() {
 		EE ee = null;
@@ -360,9 +366,10 @@ public final class SbomModelBuilder {
 				.toString())
 			.setLogical(true)
 			.setMinimumVersion(true)
-			.setDescription("Java SE platform API (osgi.ee=" + ee.getCapabilityName() + "), at least version "
+			.setDescription("Java SE platform standard (osgi.ee=" + ee.getCapabilityName() + "), at least version "
 				+ ee.getCapabilityVersion() + "; not delivered: the Java runtime implementing it is chosen by the "
 				+ "operator")
+			.setCreator(JAVA_SE_CREATOR)
 			.setCategory(Category.FRAMEWORK);
 	}
 

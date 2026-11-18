@@ -68,8 +68,9 @@ The SBOM is written to the project's `generated/` folder as `<name>.bndrun.cdx.j
   capability, e.g. `JavaSE`). The Java runtime is not delivered — the operator chooses one of any
   vendor — so the component stands for the API, without PURL or CPE, and its version is the
   minimum the application requires (TR §3.2.1), marked `osgi:version:kind=minimum`: the
-  `-runee`, or else the highest minimum the bundles require. Every bundle that requires an
-  execution environment depends on it.
+  `-runee`, or else the highest minimum the bundles require. Java SE is a standard, so its
+  creator is the body that specifies it, the Java Community Process (`https://jcp.org`), not
+  the vendor of a runtime. Every bundle that requires an execution environment depends on it.
 
 TR-03183-2 has no version ranges: delivered components carry their exact, resolved version,
 components outside the delivery their minimum version.

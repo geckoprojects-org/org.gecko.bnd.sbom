@@ -151,7 +151,10 @@ public class BsiTr03183Test {
 		assertThat(javaSE.isLogical()).isTrue();
 		assertThat(javaSE.isMinimumVersion()).isTrue();
 		assertThat(javaSE.getPurl()).isNull();
-		assertThat(javaSE.getDescription()).contains("Java SE platform API", "not delivered");
+		assertThat(javaSE.getDescription()).contains("Java SE platform standard", "not delivered");
+		assertThat(javaSE.getCreator()).isEqualTo(SbomCreator.of("Java Community Process", null, "https://jcp.org"));
+		assertThat(BsiTr03183Validator.isIdentifiedOnly(javaSE)).isTrue();
+		assertThat(javaSE.hasCreator()).isTrue();
 	}
 
 	// --- CycloneDX output ---
