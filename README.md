@@ -48,7 +48,7 @@ The SBOM is written to the project's `generated/` folder as `<name>.bndrun.cdx.j
 | `creator` | creator of the SBOM and of the application, an email address or an http(s) URL (BSI TR-03183-2 §5.2.1); CycloneDX `metadata.manufacturer` | at `medium` from the project the `.bndrun` lives in: `Bundle-Vendor` as name, an email address from `Bundle-ContactAddress`, else a URL from there or `Bundle-DocURL` |
 | `validate` | `bsi-tr-03183-2`: checks the SBOM against the required fields of BSI TR-03183-2 v2.1.0 and reports each gap; the SBOM is written either way | none |
 | `validate.strict` | `true`: a gap found by `validate` is an error, which fails the build; `false`: a warning | `false` |
-| `framework` | whether the OSGi framework (`-runfw`) is part of the scope of delivery: `delivered` for an application that ships with its framework; `provided` for a library, or a test setup, that runs on whichever framework the user installs — the framework is then identified with the version it was resolved against as minimum (`osgi:delivery=provided`, `osgi:version:kind=minimum`), without filename or hash. A `.bndrun` does not tell which of the two it is | `delivered` |
+| `framework` | whether the OSGi framework (`-runfw`, together with its class path `-runpath`) is part of the scope of delivery: `delivered` for an application that ships with its framework; `provided` for a library, or a test setup, that runs on whichever framework the user installs — the framework and the `-runpath` entries are then identified with the version it was resolved against as minimum (`osgi:delivery=provided`, `osgi:version:kind=minimum`), without filename or hash. A `.bndrun` does not tell which of the two it is | `delivered` |
 | `maven.<bsn>` | `groupId:artifactId[:version]`: Maven coordinates for a bundle from a p2 or OBR repository that is also published to Maven (version defaults to the bundle's major.minor.micro) | none |
 
 ### BSI TR-03183-2
@@ -74,7 +74,8 @@ The SBOM is written to the project's `generated/` folder as `<name>.bndrun.cdx.j
   the vendor of a runtime. Every bundle that requires an execution environment depends on it;
 - the scope of delivery of the framework, which only the author knows: an application ships
   with its framework (`framework=delivered`, the default), a library runs on the user's
-  (`framework=provided`); a provided framework is identified like the Java SE standard, with
+  (`framework=provided`); a provided framework, together with its class path (`-runpath`), is
+  identified like the Java SE standard, with
   its minimum version and without filename, hash or file properties.
 
 TR-03183-2 has no version ranges: delivered components carry their exact, resolved version,

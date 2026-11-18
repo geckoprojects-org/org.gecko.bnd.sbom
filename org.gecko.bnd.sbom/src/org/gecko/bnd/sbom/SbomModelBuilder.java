@@ -112,8 +112,9 @@ public final class SbomModelBuilder {
 		// PURL/license resolution applies.
 		// BSI TR-03183-2 §5.1: an application ships with its framework; a library or a test setup
 		// runs on whichever one the user installs (framework=provided) — the .bndrun cannot tell.
+		// The framework's class path belongs to the framework: it is shipped, or not, with it.
 		add(model, project.getRunFw(), Category.FRAMEWORK, SbomLayer.RUNFW, config.frameworkProvided());
-		add(model, project.getRunpath(), Category.FRAMEWORK, SbomLayer.RUNPATH, false);
+		add(model, project.getRunpath(), Category.FRAMEWORK, SbomLayer.RUNPATH, config.frameworkProvided());
 
 		// #13: who depends on whom, from the manifests of the resolved set
 		DependencyGraph graph = new DependencyGraph(manifests);

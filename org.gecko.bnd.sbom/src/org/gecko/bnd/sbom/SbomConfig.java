@@ -83,10 +83,11 @@ public final class SbomConfig {
 	/** {@code true}: a failed conformance check is an error instead of a warning. */
 	static final String			VALIDATE_STRICT	= "validate.strict";
 	/**
-	 * Whether the OSGi framework ({@code -runfw}) is part of the scope of delivery (BSI TR-03183-2
-	 * §3.2.1/§5.1): {@link #FRAMEWORK_DELIVERED} for an application that ships with its framework
-	 * (default), {@link #FRAMEWORK_PROVIDED} for a library or a test setup that runs on whichever
-	 * framework the user installs. A {@code .bndrun} does not tell which of the two it is.
+	 * Whether the OSGi framework ({@code -runfw}, with its class path {@code -runpath}) is part of
+	 * the scope of delivery (BSI TR-03183-2 §3.2.1/§5.1): {@link #FRAMEWORK_DELIVERED} for an
+	 * application that ships with its framework (default), {@link #FRAMEWORK_PROVIDED} for a
+	 * library or a test setup that runs on whichever framework the user installs. A
+	 * {@code .bndrun} does not tell which of the two it is.
 	 */
 	static final String			FRAMEWORK		= "framework";
 	public static final String	FRAMEWORK_DELIVERED	= "delivered";
