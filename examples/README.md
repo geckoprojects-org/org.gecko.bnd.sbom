@@ -14,7 +14,7 @@ Update pull/merge requests from CI, for a bnd workspace:
 |---|---|---|
 | Jenkins | `ci/bnd-update.sh`, a stage in the Jenkinsfile (weekly) | [ci/jenkins/README.md](../ci/jenkins/README.md), the `bnd update` stage of [gradle-workspace/Jenkinsfile](gradle-workspace/Jenkinsfile) |
 | GitLab CI | template `ci/gitlab/bnd-update.gitlab-ci.yml` (pipeline schedule) | [ci/gitlab/README.md](../ci/gitlab/README.md) |
-| GitHub Actions | composite action `.github/actions/bnd-update` | [docs/bnd-update.md](../docs/bnd-update.md#github-action) |
+| GitHub Actions | composite action `.github/actions/bnd-update` | [docs/bnd-update-ci.md](../docs/bnd-update-ci.md#github-actions) |
 
 The examples use the `-SNAPSHOT` versions from the Central Portal's snapshot repository until the
 first release; then the versions in `build.gradle`/`pom.xml` change to the release.

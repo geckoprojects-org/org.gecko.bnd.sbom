@@ -1,5 +1,7 @@
 # bnd update on Jenkins
 
+> The complete guide, with recommendations and the GitHub and GitLab/Jenkins setups side by side, is [docs/bnd-update-ci.md](../../docs/bnd-update-ci.md).
+
 Jenkins runs bnd update through `ci/bnd-update.sh`, the CI-neutral adapter that GitLab CI uses as
 well. The script
 

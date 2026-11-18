@@ -108,7 +108,7 @@ bndUpdate {
 }
 ```
 
-All options: [docs/bnd-update.md](../../docs/bnd-update.md#gradle).
+All options: [docs/bnd-update-gradle.md](../../docs/bnd-update-gradle.md).
 
 ## Jenkins
 
