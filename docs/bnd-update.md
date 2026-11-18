@@ -1,19 +1,91 @@
-# bnd update: finding updates and fixes for bnd workspaces
+# bnd update: updates and vulnerability fixes for bnd workspaces
 
-`org.gecko.bnd.update` answers three questions for a bnd workspace and does one thing:
+`bnd update` keeps the libraries of a bnd workspace current and closes known vulnerabilities,
+in a way that fits OSGi: it reads the versions from the workspace's `.mvn` indexes, respects a
+version policy, matches Trivy reports against what the repositories offer, and proves every
+change by resolving all bndruns and building the workspace.
 
-1. **Which of our libraries have newer versions?** — independent of any vulnerability report.
-2. **Which of our vulnerable libraries can be fixed, and with which version?** — for a Trivy
-   report, using what the workspace's repositories actually offer.
-3. **Does every bndrun still resolve — and to what?** — the safety check after any update.
-4. **Apply** updates — all, a selection, or the fixes of a Trivy report — and prove the result:
-   every bndrun resolves, the new `-runbundles` are written, the build passes; what fails is
-   reverted.
+It answers three questions and does one thing:
 
-1–3 only read. Only `apply` changes files.
+1. **Which of our libraries have newer versions?** (`updates`), independent of any
+   vulnerability report.
+2. **Which of our vulnerable libraries can be fixed, and with which version?**
+   (`vulnerabilities`), for a Trivy report, using what the workspace's repositories actually
+   offer.
+3. **Does every bndrun still resolve, and to what?** (`resolve`), the safety check after any
+   update.
+4. **Apply** updates (`apply`): all, a selection, or the fixes of a Trivy report, and prove the
+   result: every bndrun resolves, the new `-runbundles` are written, the build passes; what fails
+   is reverted.
 
-The same logic is available as a Java library, as a command line, as Maven and Gradle plugins,
-as a GitHub Action and as a CI adapter for Jenkins and GitLab CI. Everything in this document applies to all of them.
+1 to 3 only read. Only `apply` changes files.
+
+## Pages
+
+| Page | For |
+|---|---|
+| this page | concepts, the version policy, how fixes are chosen, the command line, the Java API, limits |
+| [bnd update with Gradle](bnd-update-gradle.md) | bnd workspaces built with Gradle: the plugin `org.geckoprojects.bnd.update` and its tasks |
+| [bnd update with Maven](bnd-update-maven.md) | projects built with the bnd Maven plugins: `bnd-update-maven-plugin` |
+| [bnd update in CI](bnd-update-ci.md) | GitHub Actions, GitLab CI and Jenkins: reports on every build, weekly update pull/merge requests, recommendations |
+
+## Which entry point
+
+| You build with | Report (read only) | Apply and open a pull/merge request |
+|---|---|---|
+| Gradle (bnd workspace) | Gradle plugin: `bndUpdates`, `bndVulnerabilities`, `bndResolveCheck` | GitHub Action, or `ci/bnd-update.sh` on Jenkins and GitLab CI; locally `bndApply` |
+| Maven (bnd Maven plugins) | `bnd-update-maven-plugin`, goal `vulnerabilities` | not needed: versions are in the `pom.xml`, which Dependabot or Renovate update |
+| anything else, or a script | the CLI: `java -jar org.gecko.bnd.update.cli.jar ...` | the CLI's `apply`, plus your own commit and push |
+
+All of them run the same logic, so everything on this page applies to all of them.
+
+## Quick start
+
+With the [CLI](#command-line) in a bnd workspace whose bundles are built (`./gradlew assemble`):
+
+```
+# which libraries have newer versions within the policy?
+java -jar org.gecko.bnd.update.cli.jar updates
+
+# which vulnerable libraries can be fixed, and with what?
+trivy sbom --format json --output trivy.json app/generated/sbom/app.bndrun.cdx.json
+java -jar org.gecko.bnd.update.cli.jar vulnerabilities --trivy trivy.json --sbom app/generated/sbom/app.bndrun.cdx.json
+
+# apply the updates one by one, each verified by resolving and building
+java -jar org.gecko.bnd.update.cli.jar apply --mode each --build-command "./gradlew build -x test"
+git diff
+```
+
+A report from the example workspace (`updates --format markdown`):
+
+```
+## Updates
+
+| Library | Installed | Proposed | Allowed | Latest | Use | Repository |
+|---|---|---|---|---|---|---|
+| `org.apache.aries.spifly:org.apache.aries.spifly.dynamic.framework.extension` | 1.3.7 | **1.3.8** | micro | 1.3.8 (micro) | runtime | Central |
+| `org.slf4j:slf4j-api` | 2.0.17 | **2.0.20** | minor | 2.0.20 (micro) | runtime | Central |
+
+### Build time: newer versions beyond the policy
+
+- `biz.aQute.bnd:biz.aQute.bndlib:7.4.0` (toolchain settings.gradle, read-only) → 7.5.0 (minor, build time only)
+
+### Outside the version policy
+
+- `org.apache.felix:org.apache.felix.framework:7.0.5` → 8.0.0 needs a major update (allowed: micro)
+```
+
+## Recommended setup
+
+| What | How | Why |
+|---|---|---|
+| Version policy | `-update-policy: default;scope=micro, buildtime;scope=minor` in `cnf/build.bnd`, wider scopes per library only where you know the library | bug-fix releases of the same line are the safe default; build-time libraries never reach the application |
+| Weekly updates | a scheduled job runs `apply --mode each` with a build command and opens **one** pull/merge request ([CI](bnd-update-ci.md)) | small, regular steps; one request to review instead of one per library |
+| Fixes on every build | `vulnerabilities` after the Trivy scan of each application SBOM, as report ([SBOMs in CI](sbom-ci.md)) | you see within a day which fix exists and whether it is within the policy |
+| Decisions | fail or mark unstable on exit code 2 only | 2 means a human has to decide (no fix in the policy, a bndrun breaks); 1 means a fix is ready |
+| Review | read the changed `.mvn` lines and `-runbundles` in the request, let the full CI (OSGi tests) run on it | resolving and building prove a lot, but not that the application behaves |
+
+**Contents**
 
 - [Why not Dependabot](#why-not-dependabot)
 - [How it works](#how-it-works)
@@ -21,10 +93,6 @@ as a GitHub Action and as a CI adapter for Jenkins and GitLab CI. Everything in 
 - [Choosing the fix version](#choosing-the-fix-version)
 - [Command line](#command-line)
 - [Using it as a library](#using-it-as-a-library)
-- [In CI](#in-ci)
-- [CI adapter (Jenkins, GitLab CI)](#ci-adapter-jenkins-gitlab-ci)
-- [Maven](#maven)
-- [GitHub Action](#github-action)
 - [After an update: resolve every bndrun](#after-an-update-resolve-every-bndrun)
 - [Limits](#limits)
 - [Roadmap](#roadmap)
@@ -297,6 +365,22 @@ workspace without a bnd installation.
 java -jar org.gecko.bnd.update.cli.jar <command> [options]
 ```
 
+### Getting the CLI
+
+The jar is published as `org.geckoprojects.bnd:org.gecko.bnd.update.cli`: releases on Maven
+Central, `-SNAPSHOT` versions in the Central Portal's snapshot repository. Download it with its
+checksum:
+
+```
+v=<version>
+base=https://repo.maven.apache.org/maven2/org/geckoprojects/bnd/org.gecko.bnd.update.cli/$v
+curl -fsSLO $base/org.gecko.bnd.update.cli-$v.jar
+echo "$(curl -fsSL $base/org.gecko.bnd.update.cli-$v.jar.sha1)  org.gecko.bnd.update.cli-$v.jar" | sha1sum -c -
+```
+
+The Gradle plugin, the GitHub Action and `ci/bnd-update.sh` fetch it themselves. Run it from the
+root of the workspace (the directory that contains `cnf`), or pass `--workspace`.
+
 ### `updates`
 
 ```
@@ -437,262 +521,6 @@ try (Workspace workspace = new Workspace(new File("/path/to/workspace"))) {
 | `IndexEditor` | changes one library's version in a `.mvn` index in place |
 | `ResolveReport`, `BndrunResult` | its results: status, added/removed bundles, unresolved requirements |
 | `Reports` | JSON and Markdown renderings |
-
-## In CI
-
-The command line is the same everywhere; only how it is called differs. A typical job: export the
-SBOMs, scan them with Trivy, run the check, publish the report.
-
-**Jenkins** — the report only, the CLI directly:
-
-```groovy
-stage('Vulnerability fixes') {
-    steps {
-        sh './gradlew :app:sbom'
-        sh 'trivy sbom --format json --output trivy.json app/generated/sbom/app.bndrun.cdx.json'
-        script {
-            def rc = sh(returnStatus: true, script:
-                'java -jar org.gecko.bnd.update.cli.jar vulnerabilities --trivy trivy.json ' +
-                '--sbom app/generated/sbom/app.bndrun.cdx.json --format markdown --output fixes.md')
-            archiveArtifacts artifacts: 'fixes.md'
-            if (rc == 2) { unstable('vulnerabilities without a fix within the version policy') }
-        }
-    }
-}
-```
-
-To apply the updates and open a pull/merge request from Jenkins, use the
-[CI adapter](#ci-adapter-jenkins-gitlab-ci).
-
-**GitLab CI**
-
-```yaml
-vulnerability-fixes:
-  script:
-    - ./gradlew :app:sbom
-    - trivy sbom --format json --output trivy.json app/generated/sbom/app.bndrun.cdx.json
-    - java -jar org.gecko.bnd.update.cli.jar vulnerabilities --trivy trivy.json
-        --sbom app/generated/sbom/app.bndrun.cdx.json --format markdown --output fixes.md
-  artifacts:
-    paths: [fixes.md]
-    when: always
-  allow_failure:
-    exit_codes: [1]
-```
-
-**GitHub Actions** — the CLI directly:
-
-```yaml
-- run: |
-    java -jar org.gecko.bnd.update.cli.jar vulnerabilities --trivy trivy.json \
-      --sbom app/generated/sbom/app.bndrun.cdx.json --format markdown --output fixes.md
-    cat fixes.md >> "$GITHUB_STEP_SUMMARY"
-```
-
-or the [GitHub Action](#github-action), which also opens the pull request. Ready-made GitLab CI
-and Jenkins adapters that open merge requests are planned (#38); until then the CLI in a job, as
-above, plus the forge's API.
-
-## CI adapter (Jenkins, GitLab CI)
-
-`ci/bnd-update.sh` does for any CI what the [GitHub Action](#github-action) does on GitHub: fetch
-the CLI, run `apply`, commit the verified updates (signed off) on a branch, push it and open or
-update one pull request (GitHub, via `GITHUB_TOKEN` + `GITHUB_REPOSITORY`) or merge request
-(GitLab, via `GITLAB_TOKEN` + the `CI_*` variables). Without a token it commits locally only;
-with `DRY_RUN=true` it shows what it would push and request. It needs bash, git, curl and Java 21,
-no jq or Python.
-
-For Jenkins: [ci/jenkins/README.md](../ci/jenkins/README.md) and the pipeline
-`ci/jenkins/Jenkinsfile.example` (weekly cron on the main branch, credentials, pinned script). A complete pipeline for a Gradle workspace (build, SBOM, Trivy, fixes, weekly update
-pull request) is [examples/gradle-workspace/Jenkinsfile](../examples/gradle-workspace/Jenkinsfile),
-one for Maven [examples/maven-sbom/Jenkinsfile](../examples/maven-sbom/Jenkinsfile).
-
-For GitLab CI: [ci/gitlab/README.md](../ci/gitlab/README.md) and the template
-`ci/gitlab/bnd-update.gitlab-ci.yml`. It has a hidden job `.bnd-update` for a pipeline schedule
-with `BND_UPDATE=true`, needs a project access token as `GITLAB_TOKEN`, and is included pinned with
-`integrity`. The example `ci/gitlab/gitlab-ci.example.yml` also hands the SBOMs to GitLab as a
-`cyclonedx` report.
-
-## Maven
-
-For projects built with the bnd Maven plugins, see the runnable example
-[examples/maven-sbom](../examples/maven-sbom/README.md).
-
-- **SBOM:** `bnd-export-maven-plugin` with `<exporter>bnd.sbom</exporter>` and
-  `org.geckoprojects.bnd:org.gecko.bnd.sbom` as plugin dependency; in the bndrun
-  `-plugin.sbom: org.gecko.bnd.sbom.SbomExporter`. No plugin of our own is needed.
-- **Vulnerability fixes:** `org.geckoprojects.bnd:bnd-update-maven-plugin`, goal
-  `vulnerabilities` (phase `verify`): the [vulnerabilities function](#function-2-vulnerabilities)
-  with the versions of the project's Maven repositories, resolved by Maven itself (mirrors,
-  proxies, credentials of `settings.xml`). Parameters `trivyReport`, `sbom`, `scope`, `policy`
-  (`-update-policy` syntax), `format`, `failOn` (`none`, `unfixable`, `vulnerable`), `skip`; report
-  in `target/bnd-update/`.
-- **Updates and re-resolution:** in a Maven project the versions live in the `pom.xml`, which
-  Dependabot updates natively; `bnd-resolver-maven-plugin` re-resolves the bndruns afterwards.
-  The plugin therefore has no `apply` goal.
-
-The plugin is built with Maven in `maven-plugin/` (outside the bnd workspace) against the
-`org.gecko.bnd.update` library. It is published with the bundles: see
-[Publishing the plugins](#publishing-the-plugins).
-
-## Gradle
-
-A runnable bnd workspace with the plugin, the SBOM exporter and a Jenkinsfile:
-[examples/gradle-workspace](../examples/gradle-workspace/README.md).
-
-For bnd workspaces built with Gradle, the plugin `org.geckoprojects.bnd.update` (built in
-`gradle-plugin/`, outside the bnd workspace) adds the four functions as tasks of the root project:
-
-| Task | Function | Changes files |
-|---|---|---|
-| `bndUpdates` | [updates](#function-1-updates) | no |
-| `bndVulnerabilities` | [vulnerabilities](#function-2-vulnerabilities), needs `trivyReport` | no |
-| `bndResolveCheck` | [resolve](#function-3-resolve), depends on every project's `jar` | no |
-| `bndApply` | [apply](#function-4-apply), depends on every project's `jar` | **yes** |
-
-The plugin is on Maven Central (not on the Gradle Plugin Portal), as the plugin marker
-`org.geckoprojects.bnd.update:org.geckoprojects.bnd.update.gradle.plugin` and the artifact
-`org.geckoprojects.bnd:bnd-update-gradle-plugin`. Snapshots are in the Central Portal's snapshot
-repository.
-
-```groovy
-// settings.gradle
-pluginManagement {
-    repositories {
-        mavenCentral()
-        // only for -SNAPSHOT versions
-        maven { url = 'https://central.sonatype.com/repository/maven-snapshots/' }
-        gradlePluginPortal()
-    }
-}
-```
-
-```groovy
-// build.gradle of the root project
-plugins {
-    id 'org.geckoprojects.bnd.update' version '0.1.0'
-}
-
-// where the bnd-update CLI comes from (by default the plugin's own version)
-repositories {
-    mavenCentral()
-}
-
-bndUpdate {
-    scope = 'micro'                          // unset: the workspace's -update-policy
-    mode = 'each'                            // bndApply: each or all
-    only = ['com.fasterxml.jackson.*:*']     // bndApply: only these libraries
-    buildCommand = './gradlew build -x test' // bndApply: verify each update
-    trivyReport = file('trivy.json')         // bndVulnerabilities; bndApply applies its fixes
-    sbom = file('generated/sbom/app/app.cdx.json')
-    format = 'markdown'                      // text, json, markdown
-    failOnFindings = false                   // fail on exit 2 (needs a decision)
-    // cliJar.from('path/to/org.gecko.bnd.update.cli.jar'), or cliVersion = '...'
-}
-```
-
-Reports go to `build/bnd-update/<command>.<md|json|txt>` (`outputDirectory`). Exit 0 and 1 are
-results; 2 fails the task only with `failOnFindings`; anything else always fails it. The tasks
-are never up to date: the answer depends on the repositories, not only on the inputs.
-
-The tasks run the [CLI](#command-line) jar (`org.geckoprojects.bnd:org.gecko.bnd.update.cli`,
-configuration `bndUpdateCli`) in **its own JVM**: the bnd Gradle plugin already brings a bndlib
-into the build, and a second one of another version in the same classloader would conflict.
-
-## Publishing the plugins
-
-The Maven and Gradle plugins are built outside the bnd workspace, but Jenkins publishes them
-together with the bundles, with `ci/publish-plugins.sh` right after bnd's release:
-
-| Branch | Version | Targets |
-|---|---|---|
-| `snapshot` | `<base-version>-SNAPSHOT` | DIM Nexus `dim-snapshot`, Central Portal snapshot repository |
-| `main` | `<base-version>`, signed, with sources and javadoc | DIM Nexus `dim-release`, and `dist/bundles` — the same Central Portal deployment as the bundles |
-
-The version is the workspace's `base-version` (`cnf/ext/fennec.bnd`), so the plugins, the
-library and the CLI of one build carry the same version, and the Gradle plugin runs the CLI of
-its own version by default. The Maven plugin is built against the `org.gecko.bnd.update` jar of
-the same build; the script refuses to run when that jar has another version. The script fetches
-Maven itself (pinned version, checked against its SHA-512, unpacked with `tar`, cached in
-`~/.cache/bnd-update`), the Gradle plugin is built with the workspace's Gradle wrapper: the
-agent needs only Java 21, curl and tar.
-
-The targets can be redirected for a trial (`NEXUS_SNAPSHOT_URL`, `NEXUS_RELEASE_URL`,
-`CENTRAL_SNAPSHOT_URL`, `DIST_DIR`), e.g. to local directories:
-
-```
-./gradlew assemble
-NEXUS_SNAPSHOT_URL=file:///tmp/repo ci/publish-plugins.sh
-```
-
-## GitHub Action
-
-`.github/actions/bnd-update` runs `apply` and turns the result into **one pull request**: it
-fetches the CLI (or uses a given jar), applies the updates, writes the report into the job
-summary and the pull request description, and opens the pull request — or updates it, when the
-branch already has one, so that repeated runs do not pile up pull requests.
-
-```yaml
-jobs:
-  update:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write        # push the update branch
-      pull-requests: write   # open the pull request
-    steps:
-      - uses: actions/checkout@<sha>
-      - uses: actions/setup-java@<sha>
-        with: { distribution: temurin, java-version: '21' }
-      - run: ./gradlew assemble          # the workspace's bundles, needed to resolve
-      - uses: geckoprojects-org/org.gecko.bnd.sbom/.github/actions/bnd-update@<sha>
-        with:
-          mode: each
-          build-command: ./gradlew build -x test --no-daemon
-```
-
-For vulnerability fixes, export the SBOM and scan it first, then pass the report:
-
-```yaml
-      - run: ./gradlew :app:export.app   # or the SBOM task of the workspace
-      - run: trivy sbom --format json --output trivy.json app/generated/app.bndrun.cdx.json
-      - uses: geckoprojects-org/org.gecko.bnd.sbom/.github/actions/bnd-update@<sha>
-        with:
-          trivy-report: trivy.json
-          sbom: app/generated/app.bndrun.cdx.json
-          branch: bnd-update/fixes
-          title: 'bnd update: vulnerability fixes'
-```
-
-| Input | Meaning | Default |
-|---|---|---|
-| `workspace` | the bnd workspace, relative to the repository | `.` |
-| `mode` | `each` or `all` ([modes](#function-4-apply)) | `each` |
-| `scope` | default scope for the run; empty uses `-update-policy` | — |
-| `only` | `groupId:artifactId` patterns | all proposed |
-| `trivy-report`, `sbom` | apply the fixes for this Trivy report instead of all updates | — |
-| `build-command` | build after resolving; a failing build reverts the update | none |
-| `cli-jar` / `cli-version` | the CLI to use: a local jar, or this version from Maven Central (a `-SNAPSHOT` from the Central snapshot repository; the download is checked against the repository's checksum) | `0.1.0-SNAPSHOT` |
-| `create-pull-request` | open/update the pull request | `true` |
-| `branch`, `title`, `labels` | of the pull request; the branch is reused by later runs | `bnd-update/updates`, `bnd update: dependency updates`, `dependencies` |
-| `token` | for pushing and opening the pull request | `github.token` |
-| `fail-on-reverted` | fail the job when an update had to be reverted (after the pull request for the others) | `false` |
-
-Outputs: `exit-code` (of `apply`), `report` (path of the Markdown report), `pull-request-url`.
-
-Things to know:
-
-- **Java 21** must be on the runner (`actions/setup-java`), plus whatever the build command needs.
-- **Build the workspace before the action** (`./gradlew assemble`): bndruns that run the
-  workspace's own bundles only resolve when those are built.
-- The repository must allow GitHub Actions to create pull requests (*Settings → Actions →
-  General → Workflow permissions*).
-- **No CI on the pull request with the default token.** GitHub does not start workflows for
-  events caused by `GITHUB_TOKEN`, so a pull request opened with it gets no checks. Pass a GitHub
-  App token or a fine-grained personal token as `token` to get them — the build in `apply` has
-  already run, but the full pipeline (OSGi tests, CodeQL) should run on the pull request too.
-- Commits are **signed off** (`Signed-off-by`), so DCO checks pass.
-- This repository uses the action on itself: `.github/workflows/bnd-update.yml` (weekly, micro,
-  `each`, with a Gradle build).
 
 ## After an update: resolve every bndrun
 

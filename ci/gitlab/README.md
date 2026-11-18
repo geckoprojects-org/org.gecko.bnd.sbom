@@ -1,5 +1,7 @@
 # bnd update on GitLab CI
 
+> The complete guide, with recommendations and the GitHub and GitLab/Jenkins setups side by side, is [docs/bnd-update-ci.md](../../docs/bnd-update-ci.md).
+
 `ci/gitlab/bnd-update.gitlab-ci.yml` is a CI template with the hidden job `.bnd-update`. It runs
 `ci/bnd-update.sh`, the CI-neutral adapter that Jenkins uses as well, on a pipeline schedule:
 
