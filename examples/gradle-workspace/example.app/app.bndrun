@@ -14,7 +14,7 @@
 	org.gecko.bnd.sbom.SbomExporter;\
 		path:="${workspace}/cnf/cache/sbom-exporter/org.gecko.bnd.sbom.jar"
 
--sbom: level=medium, format=cyclonedx
+-sbom: level=medium, format=cyclonedx, validate=bsi-tr-03183-2
 -runbundles: \
 	example.app;version=snapshot,\
 	org.apache.aries.spifly.dynamic.framework.extension;version='[1.3.7,1.3.8)',\
