@@ -1,5 +1,12 @@
 # org.gecko.bnd.sbom
 
+[![CI Build](https://github.com/geckoprojects-org/org.gecko.bnd.sbom/actions/workflows/build.yml/badge.svg?branch=snapshot)](https://github.com/geckoprojects-org/org.gecko.bnd.sbom/actions/workflows/build.yml?query=branch%3Asnapshot)
+[![CodeQL](https://github.com/geckoprojects-org/org.gecko.bnd.sbom/actions/workflows/codeql.yml/badge.svg?branch=snapshot)](https://github.com/geckoprojects-org/org.gecko.bnd.sbom/actions/workflows/codeql.yml?query=branch%3Asnapshot)
+[![SBOM and Trivy](https://github.com/geckoprojects-org/org.gecko.bnd.sbom/actions/workflows/sbom.yml/badge.svg?branch=snapshot)](https://github.com/geckoprojects-org/org.gecko.bnd.sbom/actions/workflows/sbom.yml?query=branch%3Asnapshot)
+[![Snapshot](https://img.shields.io/maven-metadata/v?metadataUrl=https%3A%2F%2Fcentral.sonatype.com%2Frepository%2Fmaven-snapshots%2Forg%2Fgeckoprojects%2Fbnd%2Forg.gecko.bnd.sbom%2Fmaven-metadata.xml&label=snapshot)](https://central.sonatype.com/repository/maven-snapshots/org/geckoprojects/bnd/org.gecko.bnd.sbom/)
+[![Java 21](https://img.shields.io/badge/Java-21-blue.svg)](https://adoptium.net/)
+[![License: EPL-2.0](https://img.shields.io/badge/License-EPL--2.0-blue.svg)](LICENSE)
+
 A bnd exporter plugin that writes a Software Bill of Materials (SBOM) for the **resolved OSGi
 application** of a `.bndrun`: the resolved `-runbundles` plus the framework layer (`-runfw`,
 `-runpath`). Output formats are CycloneDX 1.6 and SPDX 2.3 (JSON).
