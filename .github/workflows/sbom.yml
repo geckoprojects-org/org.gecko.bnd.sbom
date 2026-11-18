@@ -1,4 +1,5 @@
-# SBOM of the exporter's own runtime, written by the exporter itself, and its Trivy scan.
+# SBOM of the exporter's own runtime, written by the exporter itself, its Trivy scan, and the
+# fixes bnd update proposes for the findings.
 #
 # Separate from build.yml: it needs 'security-events: write' for the code-scanning upload, which
 # the build does not, and it runs on a schedule as well — new vulnerabilities are published for
@@ -110,6 +111,41 @@ jobs:
             cat trivy-results.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # The same findings as JSON, for bnd update below.
+      - name: Trivy scan of the SBOM (JSON)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: sbom
+          scan-ref: org.gecko.bnd.sbom/generated/sbom/runtime/runtime.bndrun.cdx.json
+          format: json
+          output: trivy-results.json
+          exit-code: '0'
+          skip-setup-trivy: true
+
+      - name: Build bnd update
+        run: ./gradlew :org.gecko.bnd.update.cli:jar --no-daemon --stacktrace
+
+      # Dogfooding: which version within the workspace's -update-policy fixes each finding. Report
+      # only, it changes nothing; written on every run, also when there is nothing to fix.
+      - name: bnd update - fixes for the Trivy findings
+        run: |
+          code=0
+          java -jar org.gecko.bnd.update.cli/generated/org.gecko.bnd.update.cli.jar vulnerabilities \
+            --trivy trivy-results.json \
+            --sbom org.gecko.bnd.sbom/generated/sbom/runtime/runtime.bndrun.cdx.json \
+            --format markdown --output bnd-update-vulnerabilities.md || code=$?
+          {
+            echo '## bnd update: fixes for the Trivy findings'
+            # the report's own headings one level down
+            if [ -f bnd-update-vulnerabilities.md ]; then
+              sed 's/^## /### /' bnd-update-vulnerabilities.md
+            else
+              echo "No report: bnd-update vulnerabilities failed with exit code $code."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          # 0 nothing to fix, 1 fixes within the policy, 2 a finding without fix in the policy
+          case "$code" in 0|1|2) ;; *) echo "::error::bnd-update vulnerabilities failed with exit code $code"; exit "$code" ;; esac
 
       # Into the repository's Security tab (code scanning). Not for pull requests and Dependabot
       # runs: their token is read-only and the upload would be refused.
