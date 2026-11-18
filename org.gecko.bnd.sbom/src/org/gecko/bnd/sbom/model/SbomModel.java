@@ -38,6 +38,10 @@ public final class SbomModel {
 	private String						vcsUrl;
 	/** Website of the application (CycloneDX {@code website}, SPDX {@code homepage}). */
 	private String						websiteUrl;
+	/** BSI TR-03183-2 §5.2.1 creator of the SBOM: email address, preferred over the URL. */
+	private String						creatorEmail;
+	/** BSI TR-03183-2 §5.2.1 creator of the SBOM: home page or project web page. */
+	private String						creatorUrl;
 	/**
 	 * Dependency graph (#13): for each component the components it depends on; {@code null}
 	 * when no graph was computed.
@@ -208,6 +212,24 @@ public final class SbomModel {
 
 	public SbomModel setDependenciesComplete(boolean dependenciesComplete) {
 		this.dependenciesComplete = dependenciesComplete;
+		return this;
+	}
+
+	public String getCreatorEmail() {
+		return creatorEmail;
+	}
+
+	public SbomModel setCreatorEmail(String creatorEmail) {
+		this.creatorEmail = creatorEmail;
+		return this;
+	}
+
+	public String getCreatorUrl() {
+		return creatorUrl;
+	}
+
+	public SbomModel setCreatorUrl(String creatorUrl) {
+		this.creatorUrl = creatorUrl;
 		return this;
 	}
 }

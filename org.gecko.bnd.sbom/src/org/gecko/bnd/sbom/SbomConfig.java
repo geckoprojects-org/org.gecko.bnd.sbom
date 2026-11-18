@@ -76,13 +76,21 @@ public final class SbomConfig {
 	 * in its repository or jar (p2, OBR), for bundles that are also published to Maven (#9).
 	 */
 	static final String			MAVEN_PREFIX	= "maven.";
+	/** Creator of the SBOM (BSI TR-03183-2 §5.2.1): an email address or a URL. */
+	static final String			CREATOR			= "creator";
+	/** Conformance check against a named guideline, see {@link #VALIDATE_BSI}. */
+	static final String			VALIDATE		= "validate";
+	/** {@code true}: a failed conformance check is an error instead of a warning. */
+	static final String			VALIDATE_STRICT	= "validate.strict";
+	/** The {@code validate} value for BSI TR-03183-2. */
+	public static final String	VALIDATE_BSI	= "bsi-tr-03183-2";
 	/** {@code serialNumber} derived from the BOM's content (default). */
 	static final String			SERIAL_CONTENT	= "content";
 	/** {@code serialNumber} random per export. */
 	static final String			SERIAL_RANDOM	= "random";
 
 	private static final List<String>	KEYS	= List.of(LEVEL, FORMAT, INCLUDE_OSGI, TIMESTAMP, SERIAL_NUMBER, APP_NAME,
-		APP_GROUP, APP_VERSION, APP_PURL, CYCLONEDX_VERSION);
+		APP_GROUP, APP_VERSION, APP_PURL, CYCLONEDX_VERSION, CREATOR, VALIDATE, VALIDATE_STRICT);
 
 	private final SbomLevel		level;
 	private final SbomFormat	format;
@@ -96,11 +104,14 @@ public final class SbomConfig {
 	private final String		applicationPurl;
 	private final Map<String, String>	properties;
 	private final Map<String, String>	mavenMappings;
+	private final String		creator;
+	private final String		validate;
+	private final boolean		validateStrict;
 
 	private SbomConfig(SbomLevel level, SbomFormat format, boolean includeOSGIMetadata, Instant created,
 		boolean randomSerialNumber, String applicationName, String applicationGroup, String applicationVersion,
 		String cyclonedxVersion, String applicationPurl, Map<String, String> properties,
-		Map<String, String> mavenMappings) {
+		Map<String, String> mavenMappings, String creator, String validate, boolean validateStrict) {
 		this.level = level;
 		this.format = format;
 		this.includeOSGIMetadata = includeOSGIMetadata;
@@ -114,6 +125,9 @@ public final class SbomConfig {
 		this.applicationPurl = applicationPurl;
 		this.properties = Collections.unmodifiableMap(new LinkedHashMap<>(properties));
 		this.mavenMappings = Collections.unmodifiableMap(new LinkedHashMap<>(mavenMappings));
+		this.creator = creator;
+		this.validate = validate;
+		this.validateStrict = validateStrict;
 	}
 
 	/**
@@ -124,7 +138,7 @@ public final class SbomConfig {
 	public static SbomConfig of(SbomLevel level, SbomFormat format, boolean includeOSGIMetadata, String timestamp) {
 		return new SbomConfig(level, format, includeOSGIMetadata,
 			timestamp != null ? Instant.parse(timestamp) : Instant.now(), false, null, null, null,
-			CYCLONEDX_VERSIONS.get(0), null, Map.of(), Map.of());
+			CYCLONEDX_VERSIONS.get(0), null, Map.of(), Map.of(), null, null, false);
 	}
 
 	public static SbomConfig from(Project project, Map<String, String> options) {
@@ -192,9 +206,19 @@ public final class SbomConfig {
 		String cyclonedxVersion = value(reporter, values, CYCLONEDX_VERSION, CYCLONEDX_VERSIONS.get(0),
 			v -> CYCLONEDX_VERSIONS.contains(v) ? Optional.of(v) : Optional.empty(), CYCLONEDX_VERSIONS.stream());
 
+		// an email address or an http(s) URL, as BSI TR-03183-2 §5.2.1 asks for
+		String creator = value(reporter, values, CREATOR, null,
+			v -> Creators.isEmail(v) || Creators.isUrl(v) ? Optional.of(v) : Optional.empty(),
+			Stream.of("an email address or an http(s) URL"));
+		String validate = value(reporter, values, VALIDATE, null,
+			v -> VALIDATE_BSI.equalsIgnoreCase(v) ? Optional.of(VALIDATE_BSI) : Optional.empty(), Stream.of(VALIDATE_BSI));
+		Boolean validateStrict = value(reporter, values, VALIDATE_STRICT, Boolean.FALSE, SbomConfig::parseBoolean,
+			Stream.of("true", "false"));
+
 		return new SbomConfig(level, format, includeOSGIMetadata, created != null ? created : Instant.now(),
 			SERIAL_RANDOM.equals(serialNumber), text(values, APP_NAME), text(values, APP_GROUP),
-			text(values, APP_VERSION), cyclonedxVersion, applicationPurl, properties, mavenMappings);
+			text(values, APP_VERSION), cyclonedxVersion, applicationPurl, properties, mavenMappings, creator, validate,
+			validateStrict);
 	}
 
 	/**
@@ -334,7 +358,8 @@ public final class SbomConfig {
 			throw new IllegalArgumentException("Unsupported CycloneDX version " + version + ", supported: " + CYCLONEDX_VERSIONS);
 		}
 		return new SbomConfig(level, format, includeOSGIMetadata, created, randomSerialNumber, applicationName,
-			applicationGroup, applicationVersion, version, applicationPurl, properties, mavenMappings);
+			applicationGroup, applicationVersion, version, applicationPurl, properties, mavenMappings, creator, validate,
+			validateStrict);
 	}
 
 	/** {@code application.name} from {@code -sbom} or the options, or {@code null}. */
@@ -355,6 +380,32 @@ public final class SbomConfig {
 	/** A copy with a random serial number (for tests and the Maven/Gradle wrappers). */
 	public SbomConfig withRandomSerialNumber() {
 		return new SbomConfig(level, format, includeOSGIMetadata, created, true, applicationName, applicationGroup,
-			applicationVersion, cyclonedxVersion, applicationPurl, properties, mavenMappings);
+			applicationVersion, cyclonedxVersion, applicationPurl, properties, mavenMappings, creator, validate,
+			validateStrict);
+	}
+
+	/** A copy with the given conformance check (for tests and the Maven/Gradle wrappers). */
+	public SbomConfig withValidate(String validate, boolean strict) {
+		if (validate != null && !VALIDATE_BSI.equals(validate)) {
+			throw new IllegalArgumentException("Unsupported validate value " + validate + ", supported: " + VALIDATE_BSI);
+		}
+		return new SbomConfig(level, format, includeOSGIMetadata, created, randomSerialNumber, applicationName,
+			applicationGroup, applicationVersion, cyclonedxVersion, applicationPurl, properties, mavenMappings, creator,
+			validate, strict);
+	}
+
+	/** {@code creator} from {@code -sbom} or the options: an email address or a URL, or {@code null}. */
+	public String creator() {
+		return creator;
+	}
+
+	/** The guideline to check the SBOM against ({@code validate}), or {@code null} for none. */
+	public String validate() {
+		return validate;
+	}
+
+	/** {@code true}: a failed conformance check is an error ({@code validate.strict}). */
+	public boolean validateStrict() {
+		return validateStrict;
 	}
 }

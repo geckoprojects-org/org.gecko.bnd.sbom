@@ -47,6 +47,17 @@ public final class CycloneDxSerializer implements SbomSerializer {
 	public static final String		PROPERTY_BSN			= "osgi:bundle:symbolicName";
 	/** OSGi Bundle-Version of a component (the Maven version is the component's version). */
 	public static final String		PROPERTY_BUNDLE_VERSION	= "osgi:bundle:version";
+	/**
+	 * {@code minimum}: the version is the minimum the application requires (BSI TR-03183-2
+	 * §3.2.1), not the exact version of a delivered file.
+	 */
+	public static final String		PROPERTY_VERSION_KIND	= "osgi:version:kind";
+
+	/** BSI property taxonomy for TR-03183-2 v2.1.0 (github.com/tr-03183/tr-03183-cyclonedx-property-taxonomy) */
+	public static final String		BSI_FILENAME			= "bsi:component:filename";
+	public static final String		BSI_EXECUTABLE			= "bsi:component:executable";
+	public static final String		BSI_ARCHIVE				= "bsi:component:archive";
+	public static final String		BSI_STRUCTURED			= "bsi:component:structured";
 
 	@Override
 	public String fileExtension() {
@@ -93,6 +104,11 @@ public final class CycloneDxSerializer implements SbomSerializer {
 		Map<String, Object> metadata = new LinkedHashMap<>();
 		metadata.put("timestamp", config.created()
 			.toString());
+		// BSI TR-03183-2 §5.2.1, table 8: the creator of the SBOM
+		Map<String, Object> manufacturer = creator(model.getCreatorEmail(), model.getCreatorUrl());
+		if (manufacturer != null) {
+			metadata.put("manufacturer", manufacturer);
+		}
 
 		Map<String, Object> tools = new LinkedHashMap<>();
 		tools.put("components", tools(model));
@@ -206,7 +222,8 @@ public final class CycloneDxSerializer implements SbomSerializer {
 	private Map<String, Object> component(SbomComponent component, SbomRefs refs) {
 		Map<String, Object> node = new LinkedHashMap<>();
 		node.put("bom-ref", refs.of(component));
-		node.put("type", "library");
+		// a logical component (BSI TR-03183-2 §3.2.2) is the Java runtime: a CycloneDX platform
+		node.put("type", component.isLogical() ? "platform" : "library");
 		// Name and version agree with the PURL: Maven coordinates when verified, otherwise the
 		// OSGi identity (#14).
 		MavenCoordinates maven = component.getMaven();
@@ -219,6 +236,11 @@ public final class CycloneDxSerializer implements SbomSerializer {
 			putIfPresent(node, "version", component.getVersion());
 		}
 		putIfPresent(node, "purl", component.getPurl());
+		// BSI TR-03183-2 §5.2.2, table 9: the component creator
+		Map<String, Object> manufacturer = creator(component.getCreatorEmail(), component.getCreatorUrl());
+		if (manufacturer != null) {
+			node.put("manufacturer", manufacturer);
+		}
 
 		if (component.getSha512() != null) {
 			Map<String, Object> hash = new LinkedHashMap<>();
@@ -234,11 +256,30 @@ public final class CycloneDxSerializer implements SbomSerializer {
 
 		List<Object> properties = new ArrayList<>();
 		// The OSGi identity is what the framework sees; it must not get lost behind the Maven one.
-		if (component.getBsn() != null) {
-			properties.add(property(PROPERTY_BSN, component.getBsn()));
+		// A logical component is no bundle: its name is the osgi.ee capability name.
+		if (component.isLogical()) {
+			if (component.getBsn() != null) {
+				properties.add(property("osgi:ee", component.getBsn()));
+			}
+		} else {
+			if (component.getBsn() != null) {
+				properties.add(property(PROPERTY_BSN, component.getBsn()));
+			}
+			if (component.getVersion() != null) {
+				properties.add(property(PROPERTY_BUNDLE_VERSION, component.getVersion()));
+			}
 		}
-		if (component.getVersion() != null) {
-			properties.add(property(PROPERTY_BUNDLE_VERSION, component.getVersion()));
+		if (component.isMinimumVersion()) {
+			properties.add(property(PROPERTY_VERSION_KIND, "minimum"));
+		}
+		// BSI TR-03183-2 §5.2.2 via the BSI property taxonomy
+		if (component.getFilename() != null) {
+			properties.add(property(BSI_FILENAME, component.getFilename()));
+		}
+		if (component.hasFileProperties()) {
+			properties.add(property(BSI_EXECUTABLE, component.getExecutable() ? "executable" : "non-executable"));
+			properties.add(property(BSI_ARCHIVE, component.getArchive() ? "archive" : "no archive"));
+			properties.add(property(BSI_STRUCTURED, component.getStructured() ? "structured" : "unstructured"));
 		}
 		// where in the runtime: installed bundle or framework class path
 		if (component.getLayer() != null) {
@@ -313,6 +354,20 @@ public final class CycloneDxSerializer implements SbomSerializer {
 		// the statement is about the application's assembly: the components listed in this BOM
 		composition.put("assemblies", listOf(refs.application()));
 		return listOf(composition);
+	}
+
+	/**
+	 * A CycloneDX organizational entity for a creator (BSI TR-03183-2 tables 8 and 9): the email
+	 * address as contact, otherwise the URL; {@code null} when neither is known.
+	 */
+	private static Map<String, Object> creator(String email, String url) {
+		if (email != null) {
+			return singletonMap("contact", listOf(singletonMap("email", email)));
+		}
+		if (url != null) {
+			return singletonMap("url", listOf(url));
+		}
+		return null;
 	}
 
 	private static void putIfPresent(Map<String, Object> node, String key, String value) {

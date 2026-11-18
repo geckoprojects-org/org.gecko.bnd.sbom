@@ -74,6 +74,18 @@ public class SbomExporter implements Exporter {
 		SbomModel model = new SbomModelBuilder(project, config).withRunbundles(runbundles)
 			.build();
 
+		// validate=bsi-tr-03183-2: report what the SBOM lacks for the guideline; strict makes it
+		// an error, which fails the build, otherwise a warning. The SBOM is written either way.
+		if (SbomConfig.VALIDATE_BSI.equals(config.validate())) {
+			for (String finding : BsiTr03183Validator.validate(model, config)) {
+				if (config.validateStrict()) {
+					project.error("BSI TR-03183-2: %s", finding);
+				} else {
+					project.warning("BSI TR-03183-2: %s", finding);
+				}
+			}
+		}
+
 		SbomSerializer serializer = SbomSerializers.forFormat(config.format());
 		Resource resource = serializer.serialize(model, config);
 

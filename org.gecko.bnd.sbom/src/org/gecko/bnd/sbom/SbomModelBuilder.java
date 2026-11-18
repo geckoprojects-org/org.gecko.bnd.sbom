@@ -23,14 +23,19 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
 import java.util.Set;
 import java.util.jar.Manifest;
 
 import aQute.bnd.build.Container;
 import aQute.bnd.build.Project;
+import aQute.bnd.build.model.EE;
+import aQute.bnd.header.Attrs;
 import aQute.bnd.header.OSGiHeader;
+import aQute.bnd.header.Parameters;
 import aQute.bnd.osgi.Constants;
 import aQute.bnd.osgi.Jar;
+import aQute.bnd.osgi.Processor;
 import aQute.bnd.version.Version;
 import org.gecko.bnd.sbom.model.MavenCoordinates;
 import org.gecko.bnd.sbom.model.SbomComponent;
@@ -39,6 +44,7 @@ import org.gecko.bnd.sbom.model.SbomLayer;
 import org.gecko.bnd.sbom.model.SbomLevel;
 import org.gecko.bnd.sbom.model.SbomLicense;
 import org.gecko.bnd.sbom.model.SbomModel;
+import aQute.lib.filter.Filter;
 import aQute.lib.hex.Hex;
 import aQute.lib.io.IO;
 
@@ -88,6 +94,17 @@ public final class SbomModelBuilder {
 			// CWE-200: URLs are published without credentials, query or fragment
 			.setVcsUrl(Limits.publishableUrl(scmUrl(project.getProperty(Constants.BUNDLE_SCM))))
 			.setWebsiteUrl(Limits.publishableUrl(firstOf(project.getProperty(Constants.BUNDLE_DOCURL))));
+		// BSI TR-03183-2 §5.2.1: who created the SBOM, an email address or else a URL — the
+		// configured creator; at medium the project's web page stands in, as the TR allows
+		String creator = config.creator();
+		if (Creators.isEmail(creator)) {
+			model.setCreatorEmail(creator.trim());
+		} else if (creator != null) {
+			model.setCreatorUrl(Limits.publishableUrl(creator));
+		} else if (config.level()
+			.includes(SbomLevel.MEDIUM)) {
+			model.setCreatorUrl(model.getWebsiteUrl());
+		}
 		Tools.current()
 			.forEach(model::addTool);
 		config.properties()
@@ -116,6 +133,21 @@ public final class SbomModelBuilder {
 		}
 		graph.roots(project.getProperty(Constants.RUNREQUIRES))
 			.forEach(model::addApplicationDependency);
+
+		// medium+, BSI TR-03183-2 §3.2.1/§3.2.2/§5.1: the Java runtime is the first component
+		// outside the scope of delivery. It is identified as a logical component with the
+		// minimum version the application needs, and the bundles that require it depend on it.
+		SbomComponent javaRuntime = config.level()
+			.includes(SbomLevel.MEDIUM) ? javaRuntime() : null;
+		if (javaRuntime != null) {
+			model.addComponent(javaRuntime);
+			for (Map.Entry<SbomComponent, Manifest> entry : manifests.entrySet()) {
+				if (minimumEE(entry.getValue()) != null) {
+					model.addDependency(entry.getKey(), javaRuntime);
+				}
+			}
+			model.addApplicationDependency(javaRuntime);
+		}
 		for (SbomComponent component : model.getComponents()) {
 			if (component.getCategory() == Category.FRAMEWORK) {
 				model.addApplicationDependency(component);
@@ -124,8 +156,12 @@ public final class SbomModelBuilder {
 
 		// A2.5/Q4: what this SBOM cannot see is declared, not silently omitted.
 		model.setDependenciesComplete(false);
-		model.addKnownUnknown("The Java runtime is not part of this SBOM; packages the bundles take from it "
-			+ "(system packages, boot delegation) have no component and no dependency edge");
+		model.addKnownUnknown(javaRuntime != null
+			? "The Java runtime is listed with the minimum version the application requires, not the runtime it "
+				+ "is deployed on; packages the bundles take from it (system packages, boot delegation) have no "
+				+ "dependency edge of their own"
+			: "The Java runtime is not part of this SBOM; packages the bundles take from it "
+				+ "(system packages, boot delegation) have no component and no dependency edge");
 		model.addKnownUnknown("DynamicImport-Package is not resolved");
 		graph.skipped()
 			.forEach(bsn -> problems.add("No dependency edges for " + bsn + ": its manifest could not be read"));
@@ -196,14 +232,22 @@ public final class SbomModelBuilder {
 			}
 		}
 
-		// medium+: hash + filename + license (BSI-driven, see §7).
+		// medium+: hash + filename + license + creator + file properties (BSI-driven, see §7).
 		if (config.level()
 			.includes(SbomLevel.MEDIUM)) {
 			File file = container.getFile();
 			if (file != null && file.isFile()) {
 				component.setFilename(file.getName());
 				component.setSha512(sha512(file));
+				if (isJar(file.getName())) {
+					setJarProperties(component);
+				}
 			}
+			for (SbomComponent embedded : component.getEmbedded()) {
+				setEmbeddedJarProperties(embedded);
+			}
+			Manifest manifest = attempt(component, "creator", container::getManifest);
+			Creators.fromManifest(component, manifest);
 			List<SbomLicense> licenses = attempt(component, "license", () -> licenseResolver.resolve(container));
 			if (licenses != null) {
 				licenses.forEach(component::addLicense);
@@ -211,6 +255,121 @@ public final class SbomModelBuilder {
 		}
 
 		return component;
+	}
+
+	/**
+	 * BSI TR-03183-2 §8.1.4–§8.1.7: a jar holds Java code (executable), combines several
+	 * components (archive) and keeps their metadata — entries, manifest (structured).
+	 */
+	private static void setJarProperties(SbomComponent component) {
+		component.setFileProperties(true, true, true);
+	}
+
+	/** A jar embedded as a file in a bundle is a jar too; shaded classes are not a file. */
+	private static void setEmbeddedJarProperties(SbomComponent embedded) {
+		if (embedded.getFilename() != null && isJar(embedded.getFilename())) {
+			setJarProperties(embedded);
+		}
+		for (SbomComponent nested : embedded.getEmbedded()) {
+			setEmbeddedJarProperties(nested);
+		}
+	}
+
+	private static boolean isJar(String filename) {
+		return filename.toLowerCase(Locale.ROOT)
+			.endsWith(".jar");
+	}
+
+	/**
+	 * The Java runtime as a logical component (BSI TR-03183-2 §3.2.2), or {@code null} when
+	 * neither {@code -runee} nor any bundle names an execution environment. Its version is the
+	 * minimum the application requires (§3.2.1): {@code -runee}, the environment the application
+	 * was resolved — and so tested — against; without it the highest of the minimums the bundles
+	 * require ({@code Require-Capability: osgi.ee}, {@code Bundle-RequiredExecutionEnvironment}).
+	 */
+	SbomComponent javaRuntime() {
+		EE ee = null;
+		String runee = project.getProperty(Constants.RUNEE);
+		if (runee != null && !runee.isBlank()) {
+			EE parsed = EE.parse(runee.trim());
+			if (parsed != null && parsed != EE.UNKNOWN) {
+				ee = parsed;
+			}
+		}
+		if (ee == null) {
+			for (Manifest manifest : manifests.values()) {
+				EE required = minimumEE(manifest);
+				if (required != null && (ee == null || isHigher(required, ee))) {
+					ee = required;
+				}
+			}
+		}
+		if (ee == null) {
+			return null;
+		}
+		return new SbomComponent().setBsn(ee.getCapabilityName())
+			.setVersion(ee.getCapabilityVersion()
+				.toString())
+			.setLogical(true)
+			.setMinimumVersion(true)
+			.setCategory(Category.FRAMEWORK);
+	}
+
+	/**
+	 * The lowest execution environment a bundle accepts, or {@code null} when it requires none.
+	 * Only environments of the Java SE line count; a bundle that names several accepts the
+	 * lowest of them.
+	 */
+	static EE minimumEE(Manifest manifest) {
+		if (manifest == null) {
+			return null;
+		}
+		EE lowest = null;
+		try {
+			Parameters requirements = new Parameters(manifest.getMainAttributes()
+				.getValue(Constants.REQUIRE_CAPABILITY));
+			for (Map.Entry<String, Attrs> entry : requirements.entrySet()) {
+				if (!"osgi.ee".equals(Processor.removeDuplicateMarker(entry.getKey()))) {
+					continue;
+				}
+				String filter = entry.getValue()
+					.get("filter:");
+				if (filter == null) {
+					continue;
+				}
+				Filter parsed = new Filter(filter);
+				for (EE candidate : EE.values()) {
+					if (isJavaSE(candidate) && (lowest == null || isHigher(lowest, candidate))
+						&& parsed.matchMap(Map.of("osgi.ee", candidate.getCapabilityName(), "version",
+							candidate.getCapabilityVersion()))) {
+						lowest = candidate;
+					}
+				}
+			}
+			if (lowest == null) {
+				String bree = manifest.getMainAttributes()
+					.getValue(Constants.BUNDLE_REQUIREDEXECUTIONENVIRONMENT);
+				for (String name : new Parameters(bree).keySet()) {
+					EE candidate = EE.parse(name.trim());
+					if (candidate != null && isJavaSE(candidate) && (lowest == null || isHigher(lowest, candidate))) {
+						lowest = candidate;
+					}
+				}
+			}
+		} catch (Exception e) {
+			// a malformed header or filter requires nothing we can name
+			return lowest;
+		}
+		return lowest;
+	}
+
+	private static boolean isJavaSE(EE ee) {
+		return ee != EE.UNKNOWN && "JavaSE".equals(ee.getCapabilityName());
+	}
+
+	private static boolean isHigher(EE a, EE b) {
+		return a.getCapabilityVersion()
+			.compareTo(b.getCapabilityVersion()) > 0;
 	}
 
 	/** The first value that is not blank, or {@code null}. */

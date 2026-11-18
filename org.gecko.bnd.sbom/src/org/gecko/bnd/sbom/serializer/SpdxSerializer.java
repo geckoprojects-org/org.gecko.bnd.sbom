@@ -210,9 +210,15 @@ public final class SpdxSerializer implements SbomSerializer {
 		// SPDX 2.3 has no free properties: the OSGi identity, which the framework sees, goes into
 		// the comment. Q3.b: an unresolvable identity is flagged, not given a fake purl.
 		List<String> comment = new ArrayList<>();
-		if (component.getBsn() != null) {
+		if (component.isLogical()) {
+			// BSI TR-03183-2 §3.2.2: the Java runtime, named by its osgi.ee capability
+			comment.add("Logical component: OSGi execution environment " + component.getBsn() + ".");
+		} else if (component.getBsn() != null) {
 			comment.add("OSGi bundle: " + component.getBsn()
 				+ (component.getVersion() != null ? " " + component.getVersion() : "") + ".");
+		}
+		if (component.isMinimumVersion()) {
+			comment.add("Version is the minimum the application requires, not a delivered file's.");
 		}
 		if (component.getLayer() != null) {
 			comment.add("Layer: " + component.getLayer()
